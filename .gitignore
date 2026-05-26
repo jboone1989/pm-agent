@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
+pm_agent.db
+*.db
+.DS_Store
+.idea/
+.next/
+node_modules/
+package-lock.json

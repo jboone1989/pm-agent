@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PM Agent - 项目管理助手</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div>
+        <h1>PM Agent</h1>
+        <p>打开「今日跟进」更新进展；点击任务查看详情</p>
+      </div>
+      <div class="header-actions">
+        <button id="toggleChatBtn" class="btn secondary btn-sm">Agent 对话</button>
+        <button id="refreshBtn" class="btn secondary btn-sm">刷新</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel view-panel">
+        <div class="panel-header">
+          <div class="tabs">
+            <button class="tab active" data-view="followup">今日跟进</button>
+            <button class="tab" data-view="list">列表</button>
+            <button class="tab" data-view="person">按人</button>
+            <button class="tab" data-view="project">按项目</button>
+            <button class="tab" data-view="weekly">周报</button>
+          </div>
+          <button type="button" id="openCreateTaskBtn" class="btn primary sm">+ 创建任务</button>
+        </div>
+        <div id="viewContent" class="view-content"></div>
+      </section>
+
+      <section class="panel chat-panel collapsed" id="chatPanel">
+        <div id="chatMessages" class="chat-messages"></div>
+        <form id="chatForm" class="chat-form">
+          <div class="chat-input-wrap">
+            <div id="mentionMenu" class="mention-menu hidden" role="listbox"></div>
+            <textarea
+              id="chatInput"
+              rows="2"
+              placeholder="输入 @ 提及负责人，# 提及任务"
+            ></textarea>
+          </div>
+          <button type="submit" class="btn primary">发送</button>
+        </form>
+      </section>
+    </main>
+
+    <aside id="detailDrawer" class="drawer hidden">
+      <div class="drawer-header">
+        <h3 id="detailTitle">任务详情</h3>
+        <button id="closeDrawer" class="btn secondary sm">关闭</button>
+      </div>
+      <div id="detailBody" class="drawer-body"></div>
+      <div id="drawerToast" class="drawer-toast hidden"></div>
+      <div id="subtaskModal" class="subtask-modal hidden">
+        <div class="subtask-modal-card">
+          <div class="subtask-modal-header">
+            <h4>添加子任务</h4>
+            <button type="button" id="closeSubtaskModal" class="btn secondary sm">取消</button>
+          </div>
+          <label for="detailSubtaskTitle">名称</label>
+          <input id="detailSubtaskTitle" placeholder="子任务名称" required />
+          <label for="detailSubtaskDescription">描述</label>
+          <textarea id="detailSubtaskDescription" rows="3" placeholder="可选，补充说明"></textarea>
+          <label for="detailSubtaskAssignee">负责人</label>
+          <input id="detailSubtaskAssignee" list="assigneeOptions" placeholder="可选" />
+          <label for="detailSubtaskStart">开始日期</label>
+          <input id="detailSubtaskStart" type="date" />
+          <label for="detailSubtaskDue">截止日期</label>
+          <input id="detailSubtaskDue" type="date" />
+          <div class="detail-actions">
+            <button type="button" class="btn primary" id="createDetailSubtask">创建子任务</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <datalist id="assigneeOptions"></datalist>
+
+    <div id="createTaskModal" class="app-modal hidden">
+      <div class="app-modal-card">
+        <div class="app-modal-header">
+          <h4>创建任务</h4>
+          <button type="button" id="closeCreateTaskModal" class="btn secondary sm">取消</button>
+        </div>
+        <label for="createTaskTitle">名称</label>
+        <input id="createTaskTitle" placeholder="任务名称" required />
+        <label for="createTaskDescription">描述</label>
+        <textarea id="createTaskDescription" rows="3" placeholder="可选，补充说明"></textarea>
+        <label for="createTaskParent">父任务</label>
+        <select id="createTaskParent">
+          <option value="">无（顶层任务）</option>
+        </select>
+        <label for="createTaskAssignee">负责人</label>
+        <input id="createTaskAssignee" list="assigneeOptions" placeholder="可选" />
+        <label for="createTaskStart">开始日期</label>
+        <input id="createTaskStart" type="date" />
+        <label for="createTaskDue">截止日期</label>
+        <input id="createTaskDue" type="date" />
+        <label for="createTaskStatus">状态</label>
+        <select id="createTaskStatus"></select>
+        <label for="createTaskType">类型</label>
+        <select id="createTaskType"></select>
+        <label for="createTaskPriority">优先级</label>
+        <select id="createTaskPriority"></select>
+        <div class="detail-actions">
+          <button type="button" class="btn primary" id="submitCreateTask">创建</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="appToast" class="app-toast hidden"></div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
