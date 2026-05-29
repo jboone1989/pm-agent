@@ -1226,7 +1226,7 @@ chatForm.addEventListener("submit", async (event) => {
   chatInput.value = "";
   chatInput.disabled = true;
 
-  const thinkingMsg = appendMessage("assistant", "⏳ 思考中...");
+  let thinkingMsg = appendMessage("assistant", "⏳ 正在分析...");
   let streamingEl = null;
 
   try {
@@ -1237,7 +1237,7 @@ chatForm.addEventListener("submit", async (event) => {
     });
 
     if (!response.ok) {
-      throw new Error(`Request failed: ${response.status}`);
+      throw new Error("服务器返回错误：" + response.status);
     }
 
     const reader = response.body.getReader();
@@ -1270,7 +1270,11 @@ chatForm.addEventListener("submit", async (event) => {
         try {
           const payload = JSON.parse(data);
 
-          if (eventType === "text") {
+          if (eventType === "status") {
+            if (thinkingMsg && thinkingMsg.parentNode) {
+              thinkingMsg.innerHTML = "⏳ " + escapeHtml(payload.text);
+            }
+          } else if (eventType === "text") {
             if (thinkingMsg && thinkingMsg.parentNode) {
               thinkingMsg.remove();
               thinkingMsg = null;
@@ -1285,12 +1289,13 @@ chatForm.addEventListener("submit", async (event) => {
               thinkingMsg.remove();
               thinkingMsg = null;
             }
-            const toolEl = appendMessage("assistant", `\u{1F527} ${escapeHtml(payload.label || payload.tool)}...`);
+            streamingEl = null;
+            const toolEl = appendMessage("assistant", "🔧 " + escapeHtml(payload.label || payload.tool) + "...");
             toolEl.dataset.tool = payload.tool;
           } else if (eventType === "tool_end") {
-            const prevTool = chatMessages.querySelector(`[data-tool="${payload.tool}"]:last-child`);
+            const prevTool = chatMessages.querySelector('[data-tool="' + payload.tool + '"]:last-child');
             if (prevTool) {
-              prevTool.innerHTML = `✅ ${escapeHtml(payload.label || payload.tool)} — 已完成`;
+              prevTool.innerHTML = "✅ " + escapeHtml(payload.label || payload.tool);
             }
           } else if (eventType === "done") {
             streamingEl = null;
@@ -1306,11 +1311,11 @@ chatForm.addEventListener("submit", async (event) => {
       thinkingMsg = null;
     }
     streamingEl = null;
-    appendMessage("assistant", `出错了：${error.message}`);
+    appendMessage("assistant", "出错了：" + (error.message || String(error)));
   } finally {
     chatInput.disabled = false;
     chatInput.focus();
-    await loadData();
+    try { await loadData(); } catch (e) { /* ignore */ }
   }
 });
 

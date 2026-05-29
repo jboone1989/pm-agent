@@ -393,6 +393,8 @@ def run_agent_stream(session: Session, message: str) -> Generator[str, None, Non
     actions: list[str] = []
 
     for _ in range(MAX_ROUNDS):
+        yield _sse("status", {"text": "正在思考..."})
+
         try:
             with client.messages.stream(
                 model=ANTHROPIC_MODEL,
@@ -414,6 +416,10 @@ def run_agent_stream(session: Session, message: str) -> Generator[str, None, Non
                 tools=TOOLS,
             )
             final = response
+            # Yield all text at once since we can't stream token-by-token
+            for block in final.content:
+                if block.type == "text":
+                    yield _sse("text", {"text": block.text})
 
         text_parts: list[str] = []
         tool_uses: list[dict[str, Any]] = []
