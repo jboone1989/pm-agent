@@ -12,7 +12,7 @@ from app.config import (
     ANTHROPIC_BASE_URL,
     ANTHROPIC_MODEL,
 )
-from app.models import ActivitySource, WorkItemStatus, WorkItemType
+from app.models import ActivitySource, WorkItem, WorkItemStatus, WorkItemType
 from app.schemas import WorkItemCreate, WorkItemUpdate
 from app.services import work_items as work_item_service
 
@@ -123,42 +123,52 @@ def _extract_task_ids(message: str) -> list[int]:
 
 
 def _build_system_prompt(session: Session, message: str) -> str:
-    """Build a minimal system prompt with DB state as context. No prescribed rules."""
+    """Build a concise system prompt. Don't dump all items — let the model search."""
     items = work_item_service.list_all_work_items(session)
     assignees = work_item_service.list_assignees(session)
 
-    serialized = []
+    # Summary only: counts by status, top-level projects
+    status_counts = {}
+    projects = []
     for item in items:
-        serialized.append({
-            "id": item.id,
-            "title": item.title,
-            "parent_id": item.parent_id,
-            "type": item.type.value,
-            "status": item.status.value,
-            "assignee": item.assignee,
-            "start_date": item.start_date.isoformat() if item.start_date else None,
-            "due_date": item.due_date.isoformat() if item.due_date else None,
-            "priority": item.priority.value,
-            "progress": item.progress,
-        })
-
-    ids = _extract_task_ids(message)
-    ref_hint = ""
-    if ids:
-        ref_hint = f"\n\n用户消息中通过 #id 引用了以下任务：{ids}"
+        status_counts[item.status.value] = status_counts.get(item.status.value, 0) + 1
+        if item.parent_id is None:
+            projects.append({"id": item.id, "title": item.title, "status": item.status.value})
 
     today = date.today().isoformat()
+
+    # If user references specific IDs, include those details
+    ref_hint = ""
+    ref_ids = _extract_task_ids(message)
+    if ref_ids:
+        ref_lines = []
+        for rid in ref_ids:
+            item = work_item_service.get_work_item(session, rid)
+            if item:
+                parent_title = ""
+                if item.parent_id:
+                    parent = session.get(WorkItem, item.parent_id)
+                    parent_title = f"，父任务 #{item.parent_id}「{parent.title if parent else '?'}」"
+                ref_lines.append(f"  #{item.id}「{item.title}」状态={item.status.value} 进度={item.progress}%{parent_title}")
+        if ref_lines:
+            ref_hint = "\n## 用户引用的任务\n" + "\n".join(ref_lines)
+
     return f"""你是项目管理助手，用中文回复。
 
-## 数据库状态
-{json.dumps({"work_items": serialized, "total": len(serialized), "assignees": assignees, "today": today}, ensure_ascii=False, indent=2)}
+## 数据库概览
+共 {len(items)} 个任务，状态分布：{json.dumps(status_counts, ensure_ascii=False)}
+人员：{json.dumps(assignees, ensure_ascii=False)}
+今天：{today}
+
+## 顶层项目
+{json.dumps(projects, ensure_ascii=False)}
 {ref_hint}
-## 工具使用说明
-- planned = 计划任务，ad_hoc = 临时任务
-- 日期用 YYYY-MM-DD，必须使用当前年份 ({today[:4]})
-- progress 0-100，设为 100 会自动标记完成
-- 创建子任务时必须设置 parent_id
-- 每次写操作后用 add_activity 记录"""
+## 工具说明
+- 需要查任务详情时用 search_work_items，不要猜
+- planned=计划任务，ad_hoc=临时任务
+- 日期 YYYY-MM-DD，年份 {today[:4]}
+- progress=100 自动标记完成
+- 创建子任务设置 parent_id"""
 
 
 def _serialize_item(item) -> dict[str, Any]:
