@@ -3,10 +3,16 @@ import re
 from datetime import date, timedelta
 from typing import Any
 
-from openai import OpenAI
 from sqlmodel import Session
 
-from app.config import LLM_API_BASE, LLM_API_KEY, LLM_MODEL
+from app.config import (
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_MODEL,
+    LLM_API_BASE,
+    LLM_API_KEY,
+    LLM_MODEL,
+    LLM_PROVIDER,
+)
 from app.models import ActivitySource, WorkItem, WorkItemStatus, WorkItemType
 from app.schemas import WorkItemCreate, WorkItemUpdate
 from app.services import work_items as work_item_service
@@ -151,6 +157,22 @@ TOOLS = [
         },
     },
 ]
+
+
+def _openai_tools_to_anthropic() -> list[dict[str, Any]]:
+    """Convert OpenAI-format tool definitions to Anthropic format."""
+    anthropic_tools = []
+    for tool in TOOLS:
+        func = tool["function"]
+        anthropic_tools.append({
+            "name": func["name"],
+            "description": func["description"],
+            "input_schema": func["parameters"],
+        })
+    return anthropic_tools
+
+
+ANTHROPIC_TOOLS = _openai_tools_to_anthropic()
 
 
 def _extract_task_ids(message: str) -> list[int]:
@@ -313,17 +335,10 @@ def execute_tool(
     return json.dumps({"error": f"unknown tool {name}"}, ensure_ascii=False), changed_ids
 
 
-def run_agent(session: Session, message: str) -> tuple[str, list[str], list[int]]:
-    if not LLM_API_KEY:
-        return (
-            "请先在 .env 中配置 LLM_API_KEY 后再使用 Agent。你也可以直接在右侧视图手动管理工作项。",
-            [],
-            [],
-        )
+def _run_agent_openai(session: Session, message: str, system_prompt: str) -> tuple[str, list[str], list[int]]:
+    from openai import OpenAI
 
     client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_API_BASE)
-    context = _build_message_context(session, message)
-    system_prompt = SYSTEM_PROMPT if not context else f"{SYSTEM_PROMPT}\n\n{context}"
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": message},
@@ -351,12 +366,95 @@ def run_agent(session: Session, message: str) -> tuple[str, list[str], list[int]
             result, ids = execute_tool(session, tool_call.function.name, args, message)
             actions.append(f"{tool_call.function.name}({json.dumps(args, ensure_ascii=False)})")
             changed_ids.extend(ids)
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": result,
-                }
-            )
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": result,
+            })
 
     return "操作步骤较多，请拆成更小的指令再试。", actions, list(dict.fromkeys(changed_ids))
+
+
+def _run_agent_anthropic(session: Session, message: str, system_prompt: str) -> tuple[str, list[str], list[int]]:
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    messages: list[dict[str, Any]] = [{"role": "user", "content": message}]
+    actions: list[str] = []
+    changed_ids: list[int] = []
+
+    for _ in range(8):
+        response = client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=4096,
+            system=system_prompt,
+            messages=messages,
+            tools=ANTHROPIC_TOOLS,
+        )
+
+        assistant_content: list[dict[str, Any]] = []
+        tool_uses: list[dict[str, Any]] = []
+        text_parts: list[str] = []
+
+        for block in response.content:
+            if block.type == "text":
+                text_parts.append(block.text)
+                assistant_content.append({"type": "text", "text": block.text})
+            elif block.type == "tool_use":
+                tool_uses.append({
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.input,
+                })
+                assistant_content.append({
+                    "type": "tool_use",
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.input,
+                })
+
+        messages.append({"role": "assistant", "content": assistant_content})
+
+        if not tool_uses:
+            reply = "\n".join(text_parts) if text_parts else "已处理。"
+            return reply, actions, list(dict.fromkeys(changed_ids))
+
+        tool_results: list[dict[str, Any]] = []
+        for tu in tool_uses:
+            result, ids = execute_tool(session, tu["name"], tu["input"], message)
+            actions.append(f"{tu['name']}({json.dumps(tu['input'], ensure_ascii=False)})")
+            changed_ids.extend(ids)
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tu["id"],
+                "content": result,
+            })
+
+        messages.append({"role": "user", "content": tool_results})
+
+    return "操作步骤较多，请拆成更小的指令再试。", actions, list(dict.fromkeys(changed_ids))
+
+
+def run_agent(session: Session, message: str) -> tuple[str, list[str], list[int]]:
+    if LLM_PROVIDER == "anthropic":
+        if not ANTHROPIC_API_KEY:
+            return (
+                "请先在 .env 中配置 ANTHROPIC_API_KEY 后再使用 Agent。你也可以直接在右侧视图手动管理工作项。",
+                [],
+                [],
+            )
+    else:
+        if not LLM_API_KEY:
+            return (
+                "请先在 .env 中配置 LLM_API_KEY 后再使用 Agent。你也可以直接在右侧视图手动管理工作项。",
+                [],
+                [],
+            )
+
+    context = _build_message_context(session, message)
+    system_prompt = SYSTEM_PROMPT if not context else f"{SYSTEM_PROMPT}\n\n{context}"
+
+    if LLM_PROVIDER == "anthropic":
+        return _run_agent_anthropic(session, message, system_prompt)
+    else:
+        return _run_agent_openai(session, message, system_prompt)
