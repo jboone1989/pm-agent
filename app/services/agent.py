@@ -7,6 +7,7 @@ from sqlmodel import Session
 
 from app.config import (
     ANTHROPIC_API_KEY,
+    ANTHROPIC_BASE_URL,
     ANTHROPIC_MODEL,
     LLM_API_BASE,
     LLM_API_KEY,
@@ -378,7 +379,7 @@ def _run_agent_openai(session: Session, message: str, system_prompt: str) -> tup
 def _run_agent_anthropic(session: Session, message: str, system_prompt: str) -> tuple[str, list[str], list[int]]:
     import anthropic
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, base_url=ANTHROPIC_BASE_URL)
     messages: list[dict[str, Any]] = [{"role": "user", "content": message}]
     actions: list[str] = []
     changed_ids: list[int] = []

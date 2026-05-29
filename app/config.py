@@ -16,6 +16,7 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY") or LLM_API_KEY
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 
 
 def normalize_llm_base_url(base_url: str) -> str:
