@@ -1,10 +1,10 @@
 import json
 from datetime import date, datetime, timedelta
 
-from openai import OpenAI
+import anthropic
 from sqlmodel import Session, select
 
-from app.config import LLM_API_BASE, LLM_API_KEY, LLM_MODEL
+from app.config import ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, ANTHROPIC_MODEL
 from app.models import OperationAction, WeeklyReport, WorkItem, WorkItemStatus
 from app.services import operation_log as op_log
 
@@ -47,7 +47,7 @@ def collect_open_tasks(session: Session) -> list[dict]:
 
 def generate_report(session: Session, week_key: str) -> WeeklyReport:
     entries = op_log.list_operations(session, week_key)
-    if not entries and not LLM_API_KEY:
+    if not entries and not ANTHROPIC_API_KEY:
         report = WeeklyReport(
             week_key=week_key,
             this_week_summary="本周暂无操作记录。",
@@ -86,7 +86,7 @@ def generate_report(session: Session, week_key: str) -> WeeklyReport:
   "next_week_plan": "..."
 }}"""
 
-    if not LLM_API_KEY:
+    if not ANTHROPIC_API_KEY:
         summary = "本周操作记录：\n" + "\n".join(f"- {line}" for line in log_lines[:20])
         plan = "下周待办（基于当前未完成任务）：\n" + "\n".join(
             f"- {task['title']}（进度 {task['progress']}%，截止 {task['due_date'] or '未设置'}）"
@@ -107,16 +107,14 @@ def generate_report(session: Session, week_key: str) -> WeeklyReport:
         session.refresh(report)
         return report
 
-    client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_API_BASE)
-    response = client.chat.completions.create(
-        model=LLM_MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_format={"type": "json_object"},
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, base_url=ANTHROPIC_BASE_URL)
+    response = client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=4096,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_prompt}],
     )
-    content = response.choices[0].message.content or "{}"
+    content = response.content[0].text if response.content else "{}"
     payload = json.loads(content)
 
     existing = get_saved_report(session, week_key)
