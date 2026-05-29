@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import date, timedelta
+from collections.abc import Generator
 from typing import Any
 
 import anthropic
@@ -344,3 +345,102 @@ def run_agent(session: Session, message: str) -> tuple[str, list[str], list[int]
         messages.append({"role": "user", "content": tool_results})
 
     return "操作步骤较多，请拆成更小的指令再试。", actions, list(dict.fromkeys(changed_ids))
+
+
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _tool_label(name: str, args: dict[str, Any]) -> str:
+    labels = {
+        "create_work_item": f"创建任务「{args.get('title', '')}」",
+        "update_work_item": f"更新任务 #{args.get('id', '')}",
+        "search_work_items": f"搜索「{args.get('query', '')}」",
+        "add_activity": f"记录进展到 #{args.get('work_item_id', '')}",
+        "split_work_item": f"拆分子任务 #{args.get('parent_id', '')}",
+    }
+    return labels.get(name, name)
+
+
+def run_agent_stream(session: Session, message: str) -> Generator[str, None, None]:
+    """Generator yielding SSE event strings for real-time frontend updates.
+
+    Events:
+        text: model's streaming text chunks
+        tool_start: about to execute a tool
+        tool_end: tool execution result
+        done: final result with changed_item_ids
+    """
+    if not ANTHROPIC_API_KEY:
+        yield _sse("text", {"text": "请先在 .env 中配置 ANTHROPIC_API_KEY 后再使用 Agent。"})
+        yield _sse("done", {"reply": "未配置 API Key", "changed_item_ids": []})
+        return
+
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, base_url=ANTHROPIC_BASE_URL)
+    system_prompt = _build_system_prompt(session, message)
+    messages: list[dict[str, Any]] = [{"role": "user", "content": message}]
+    all_changed_ids: list[int] = []
+    actions: list[str] = []
+
+    for _ in range(MAX_ROUNDS):
+        try:
+            with client.messages.stream(
+                model=ANTHROPIC_MODEL,
+                max_tokens=4096,
+                system=system_prompt,
+                messages=messages,
+                tools=TOOLS,
+            ) as stream:
+                for text_chunk in stream.text_stream:
+                    yield _sse("text", {"text": text_chunk})
+                final = stream.get_final_message()
+        except Exception:
+            # Streaming not supported, fall back to non-streaming
+            response = client.messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=4096,
+                system=system_prompt,
+                messages=messages,
+                tools=TOOLS,
+            )
+            final = response
+
+        text_parts: list[str] = []
+        tool_uses: list[dict[str, Any]] = []
+        assistant_content: list[dict[str, Any]] = []
+
+        for block in final.content:
+            if block.type == "text":
+                text_parts.append(block.text)
+                assistant_content.append({"type": "text", "text": block.text})
+            elif block.type == "tool_use":
+                tool_uses.append({"id": block.id, "name": block.name, "input": block.input})
+                assistant_content.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
+
+        messages.append({"role": "assistant", "content": assistant_content})
+
+        if not tool_uses:
+            reply = "\n".join(text_parts) if text_parts else "已处理。"
+            yield _sse("done", {"reply": reply, "changed_item_ids": list(dict.fromkeys(all_changed_ids)), "actions": actions})
+            return
+
+        tool_results: list[dict[str, Any]] = []
+        for tu in tool_uses:
+            yield _sse("tool_start", {
+                "tool": tu["name"],
+                "label": _tool_label(tu["name"], tu["input"]),
+                "args": tu["input"],
+            })
+            result, ids = execute_tool(session, tu["name"], tu["input"], message)
+            all_changed_ids.extend(ids)
+            actions.append(f"{tu['name']}({json.dumps(tu['input'], ensure_ascii=False)})")
+            yield _sse("tool_end", {
+                "tool": tu["name"],
+                "label": _tool_label(tu["name"], tu["input"]),
+                "result": result[:500],
+            })
+            tool_results.append({"type": "tool_result", "tool_use_id": tu["id"], "content": result})
+
+        messages.append({"role": "user", "content": tool_results})
+
+    yield _sse("done", {"reply": "操作步骤较多，请拆成更小的指令再试。", "changed_item_ids": list(dict.fromkeys(all_changed_ids)), "actions": actions})

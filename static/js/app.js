@@ -552,6 +552,7 @@ function appendMessage(role, content, meta = "") {
   div.innerHTML = `${formatChatMessage(content)}${meta ? `<div class="meta">${escapeHtml(meta)}</div>` : ""}`;
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
+  return div;
 }
 
 async function fetchJson(url, options = {}) {
@@ -1225,18 +1226,91 @@ chatForm.addEventListener("submit", async (event) => {
   chatInput.value = "";
   chatInput.disabled = true;
 
+  const thinkingMsg = appendMessage("assistant", "⏳ 思考中...");
+  let streamingEl = null;
+
   try {
-    const result = await fetchJson("/api/chat", {
+    const response = await fetch("/api/chat/stream", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
     });
-    appendMessage("assistant", result.reply, result.actions.length ? `操作：${result.actions.join("；")}` : "");
-    await loadData();
+
+    if (!response.ok) {
+      throw new Error(`Request failed: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+
+      for (const part of parts) {
+        const lines = part.split("\n");
+        let eventType = "";
+        let data = "";
+
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            data = line.slice(6);
+          }
+        }
+
+        if (!data) continue;
+
+        try {
+          const payload = JSON.parse(data);
+
+          if (eventType === "text") {
+            if (thinkingMsg && thinkingMsg.parentNode) {
+              thinkingMsg.remove();
+              thinkingMsg = null;
+            }
+            if (!streamingEl) {
+              streamingEl = appendMessage("assistant", "");
+            }
+            streamingEl.innerHTML += formatChatMessage(payload.text);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+          } else if (eventType === "tool_start") {
+            if (thinkingMsg && thinkingMsg.parentNode) {
+              thinkingMsg.remove();
+              thinkingMsg = null;
+            }
+            const toolEl = appendMessage("assistant", `\u{1F527} ${escapeHtml(payload.label || payload.tool)}...`);
+            toolEl.dataset.tool = payload.tool;
+          } else if (eventType === "tool_end") {
+            const prevTool = chatMessages.querySelector(`[data-tool="${payload.tool}"]:last-child`);
+            if (prevTool) {
+              prevTool.innerHTML = `✅ ${escapeHtml(payload.label || payload.tool)} — 已完成`;
+            }
+          } else if (eventType === "done") {
+            streamingEl = null;
+          }
+        } catch (e) {
+          // skip malformed events
+        }
+      }
+    }
   } catch (error) {
+    if (thinkingMsg && thinkingMsg.parentNode) {
+      thinkingMsg.remove();
+      thinkingMsg = null;
+    }
+    streamingEl = null;
     appendMessage("assistant", `出错了：${error.message}`);
   } finally {
     chatInput.disabled = false;
     chatInput.focus();
+    await loadData();
   }
 });
 
