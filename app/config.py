@@ -8,6 +8,16 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'pm_agent.db'}")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+LLM_API_BASE = os.getenv("LLM_API_BASE", "https://api.openai.com/v1")
+
+
+def _normalize_base_url(url: str) -> str:
+    url = url.rstrip("/")
+    if not url.endswith("/v1"):
+        url = f"{url}/v1"
+    return url
+
+
+LLM_API_BASE = _normalize_base_url(LLM_API_BASE)

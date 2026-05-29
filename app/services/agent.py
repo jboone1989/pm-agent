@@ -1,17 +1,13 @@
 import json
 import re
-from datetime import date, timedelta
 from collections.abc import Generator
+from datetime import date, timedelta
 from typing import Any
 
-import anthropic
+from openai import OpenAI
 from sqlmodel import Session
 
-from app.config import (
-    ANTHROPIC_API_KEY,
-    ANTHROPIC_BASE_URL,
-    ANTHROPIC_MODEL,
-)
+from app.config import LLM_API_BASE, LLM_API_KEY, LLM_MODEL
 from app.models import ActivitySource, WorkItem, WorkItemStatus, WorkItemType
 from app.schemas import WorkItemCreate, WorkItemUpdate
 from app.services import work_items as work_item_service
@@ -22,97 +18,112 @@ MAX_ROUNDS = 8
 
 TOOLS = [
     {
-        "name": "create_work_item",
-        "description": "创建新的工作项（项目、子任务或临时事项）",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string"},
-                "description": {"type": "string", "default": ""},
-                "parent_id": {"type": ["integer", "null"]},
-                "type": {"type": "string", "enum": ["planned", "ad_hoc"]},
-                "status": {"type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"]},
-                "assignee": {"type": ["string", "null"]},
-                "start_date": {"type": ["string", "null"]},
-                "due_date": {"type": ["string", "null"]},
-                "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
-                "progress": {"type": "integer", "minimum": 0, "maximum": 100},
-            },
-            "required": ["title"],
-        },
-    },
-    {
-        "name": "update_work_item",
-        "description": "更新已有工作项",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "id": {"type": "integer"},
-                "title": {"type": "string"},
-                "description": {"type": "string"},
-                "parent_id": {"type": ["integer", "null"]},
-                "status": {"type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"]},
-                "assignee": {"type": ["string", "null"]},
-                "start_date": {"type": ["string", "null"]},
-                "due_date": {"type": ["string", "null"]},
-                "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
-                "type": {"type": "string", "enum": ["planned", "ad_hoc"]},
-                "progress": {"type": "integer", "minimum": 0, "maximum": 100},
-            },
-            "required": ["id"],
-        },
-    },
-    {
-        "name": "search_work_items",
-        "description": "模糊搜索工作项",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "assignee": {"type": ["string", "null"]},
-                "status": {"type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"]},
-                "type": {"type": "string", "enum": ["planned", "ad_hoc"]},
-                "limit": {"type": "integer"},
+        "type": "function",
+        "function": {
+            "name": "create_work_item",
+            "description": "创建新的工作项（项目、子任务或临时事项）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string", "default": ""},
+                    "parent_id": {"type": ["integer", "null"]},
+                    "type": {"type": "string", "enum": ["planned", "ad_hoc"]},
+                    "status": {"type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"]},
+                    "assignee": {"type": ["string", "null"]},
+                    "start_date": {"type": ["string", "null"]},
+                    "due_date": {"type": ["string", "null"]},
+                    "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
+                    "progress": {"type": "integer", "minimum": 0, "maximum": 100},
+                },
+                "required": ["title"],
             },
         },
     },
     {
-        "name": "add_activity",
-        "description": "为工作项添加进展记录",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "work_item_id": {"type": "integer"},
-                "content": {"type": "string"},
+        "type": "function",
+        "function": {
+            "name": "update_work_item",
+            "description": "更新已有工作项",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "parent_id": {"type": ["integer", "null"]},
+                    "status": {"type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"]},
+                    "assignee": {"type": ["string", "null"]},
+                    "start_date": {"type": ["string", "null"]},
+                    "due_date": {"type": ["string", "null"]},
+                    "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
+                    "type": {"type": "string", "enum": ["planned", "ad_hoc"]},
+                    "progress": {"type": "integer", "minimum": 0, "maximum": 100},
+                },
+                "required": ["id"],
             },
-            "required": ["work_item_id", "content"],
         },
     },
     {
-        "name": "split_work_item",
-        "description": "将一个大任务拆成多个子任务",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "parent_id": {"type": "integer"},
-                "children": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "title": {"type": "string"},
-                            "description": {"type": "string"},
-                            "assignee": {"type": ["string", "null"]},
-                            "due_date": {"type": ["string", "null"]},
-                            "status": {"type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"]},
-                            "type": {"type": "string", "enum": ["planned", "ad_hoc"]},
-                            "progress": {"type": "integer", "minimum": 0, "maximum": 100},
-                        },
-                        "required": ["title"],
-                    },
+        "type": "function",
+        "function": {
+            "name": "search_work_items",
+            "description": "模糊搜索工作项",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "assignee": {"type": ["string", "null"]},
+                    "status": {"type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"]},
+                    "type": {"type": "string", "enum": ["planned", "ad_hoc"]},
+                    "limit": {"type": "integer"},
                 },
             },
-            "required": ["parent_id", "children"],
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_activity",
+            "description": "为工作项添加进展记录",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "work_item_id": {"type": "integer"},
+                    "content": {"type": "string"},
+                },
+                "required": ["work_item_id", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "split_work_item",
+            "description": "将一个大任务拆成多个子任务",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "parent_id": {"type": "integer"},
+                    "children": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string"},
+                                "description": {"type": "string"},
+                                "assignee": {"type": ["string", "null"]},
+                                "due_date": {"type": ["string", "null"]},
+                                "status": {"type": "string", "enum": ["todo", "in_progress", "blocked", "done", "cancelled"]},
+                                "type": {"type": "string", "enum": ["planned", "ad_hoc"]},
+                                "progress": {"type": "integer", "minimum": 0, "maximum": 100},
+                            },
+                            "required": ["title"],
+                        },
+                    },
+                },
+                "required": ["parent_id", "children"],
+            },
         },
     },
 ]
@@ -123,11 +134,9 @@ def _extract_task_ids(message: str) -> list[int]:
 
 
 def _build_system_prompt(session: Session, message: str) -> str:
-    """Build a concise system prompt. Don't dump all items — let the model search."""
     items = work_item_service.list_all_work_items(session)
     assignees = work_item_service.list_assignees(session)
 
-    # Summary only: counts by status, top-level projects
     status_counts = {}
     projects = []
     for item in items:
@@ -137,7 +146,6 @@ def _build_system_prompt(session: Session, message: str) -> str:
 
     today = date.today().isoformat()
 
-    # If user references specific IDs, include those details
     ref_hint = ""
     ref_ids = _extract_task_ids(message)
     if ref_ids:
@@ -304,59 +312,6 @@ def execute_tool(
     return json.dumps({"error": f"unknown tool {name}"}, ensure_ascii=False), changed_ids
 
 
-def run_agent(session: Session, message: str) -> tuple[str, list[str], list[int]]:
-    if not ANTHROPIC_API_KEY:
-        return (
-            "请先在 .env 中配置 ANTHROPIC_API_KEY 后再使用 Agent。",
-            [],
-            [],
-        )
-
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, base_url=ANTHROPIC_BASE_URL)
-    system_prompt = _build_system_prompt(session, message)
-    messages: list[dict[str, Any]] = [{"role": "user", "content": message}]
-    actions: list[str] = []
-    changed_ids: list[int] = []
-
-    for _ in range(MAX_ROUNDS):
-        response = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=4096,
-            system=system_prompt,
-            messages=messages,
-            tools=TOOLS,
-        )
-
-        text_parts: list[str] = []
-        tool_uses: list[dict[str, Any]] = []
-        assistant_content: list[dict[str, Any]] = []
-
-        for block in response.content:
-            if block.type == "text":
-                text_parts.append(block.text)
-                assistant_content.append({"type": "text", "text": block.text})
-            elif block.type == "tool_use":
-                tool_uses.append({"id": block.id, "name": block.name, "input": block.input})
-                assistant_content.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
-
-        messages.append({"role": "assistant", "content": assistant_content})
-
-        if not tool_uses:
-            reply = "\n".join(text_parts) if text_parts else "已处理。"
-            return reply, actions, list(dict.fromkeys(changed_ids))
-
-        tool_results: list[dict[str, Any]] = []
-        for tu in tool_uses:
-            result, ids = execute_tool(session, tu["name"], tu["input"], message)
-            actions.append(f"{tu['name']}({json.dumps(tu['input'], ensure_ascii=False)})")
-            changed_ids.extend(ids)
-            tool_results.append({"type": "tool_result", "tool_use_id": tu["id"], "content": result})
-
-        messages.append({"role": "user", "content": tool_results})
-
-    return "操作步骤较多，请拆成更小的指令再试。", actions, list(dict.fromkeys(changed_ids))
-
-
 def _sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
@@ -372,91 +327,79 @@ def _tool_label(name: str, args: dict[str, Any]) -> str:
     return labels.get(name, name)
 
 
-def run_agent_stream(session: Session, message: str) -> Generator[str, None, None]:
-    """Generator yielding SSE event strings for real-time frontend updates.
+def run_agent(session: Session, message: str) -> tuple[str, list[str], list[int]]:
+    """Non-streaming version for backward compatibility."""
+    if not LLM_API_KEY:
+        return ("请先在 .env 中配置 LLM_API_KEY 后再使用 Agent。", [], [])
 
-    Events:
-        text: model's streaming text chunks
-        tool_start: about to execute a tool
-        tool_end: tool execution result
-        done: final result with changed_item_ids
-    """
-    if not ANTHROPIC_API_KEY:
-        yield _sse("text", {"text": "请先在 .env 中配置 ANTHROPIC_API_KEY 后再使用 Agent。"})
-        yield _sse("done", {"reply": "未配置 API Key", "changed_item_ids": []})
+    client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_API_BASE)
+    system_prompt = _build_system_prompt(session, message)
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
+    actions = []
+    changed_ids = []
+
+    for _ in range(MAX_ROUNDS):
+        response = client.chat.completions.create(
+            model=LLM_MODEL, messages=messages, tools=TOOLS, tool_choice="auto"
+        )
+        choice = response.choices[0]
+        msg = choice.message
+        messages.append(msg.model_dump(exclude_none=True))
+
+        if not msg.tool_calls:
+            return msg.content or "已处理。", actions, list(dict.fromkeys(changed_ids))
+
+        for tc in msg.tool_calls:
+            args = json.loads(tc.function.arguments or "{}")
+            result, ids = execute_tool(session, tc.function.name, args, message)
+            actions.append(f"{tc.function.name}({json.dumps(args, ensure_ascii=False)})")
+            changed_ids.extend(ids)
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+
+    return "操作步骤较多，请拆成更小的指令再试。", actions, list(dict.fromkeys(changed_ids))
+
+
+def run_agent_stream(session: Session, message: str) -> Generator[str, None, None]:
+    """SSE streaming generator — non-streaming LLM call, streamed to frontend."""
+    if not LLM_API_KEY:
+        yield _sse("text", {"text": "请先在 .env 中配置 LLM_API_KEY 后再使用 Agent。"})
+        yield _sse("done", {"reply": "未配置 API Key", "changed_item_ids": [], "actions": []})
         return
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, base_url=ANTHROPIC_BASE_URL)
+    client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_API_BASE)
     system_prompt = _build_system_prompt(session, message)
-    messages: list[dict[str, Any]] = [{"role": "user", "content": message}]
-    all_changed_ids: list[int] = []
-    actions: list[str] = []
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
+    all_changed_ids = []
+    all_actions = []
 
     for _ in range(MAX_ROUNDS):
         yield _sse("status", {"text": "正在思考..."})
 
-        try:
-            with client.messages.stream(
-                model=ANTHROPIC_MODEL,
-                max_tokens=4096,
-                system=system_prompt,
-                messages=messages,
-                tools=TOOLS,
-            ) as stream:
-                for text_chunk in stream.text_stream:
-                    yield _sse("text", {"text": text_chunk})
-                final = stream.get_final_message()
-        except Exception:
-            # Streaming not supported, fall back to non-streaming
-            response = client.messages.create(
-                model=ANTHROPIC_MODEL,
-                max_tokens=4096,
-                system=system_prompt,
-                messages=messages,
-                tools=TOOLS,
-            )
-            final = response
-            # Yield all text at once since we can't stream token-by-token
-            for block in final.content:
-                if block.type == "text":
-                    yield _sse("text", {"text": block.text})
+        response = client.chat.completions.create(
+            model=LLM_MODEL, messages=messages, tools=TOOLS, tool_choice="auto"
+        )
+        choice = response.choices[0]
+        msg = choice.message
 
-        text_parts: list[str] = []
-        tool_uses: list[dict[str, Any]] = []
-        assistant_content: list[dict[str, Any]] = []
+        # Stream text character by character for frontend feel
+        text = msg.content or ""
+        for i in range(0, len(text), 3):
+            yield _sse("text", {"text": text[i:i+3]})
 
-        for block in final.content:
-            if block.type == "text":
-                text_parts.append(block.text)
-                assistant_content.append({"type": "text", "text": block.text})
-            elif block.type == "tool_use":
-                tool_uses.append({"id": block.id, "name": block.name, "input": block.input})
-                assistant_content.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
+        assistant_msg = msg.model_dump(exclude_none=True)
+        messages.append(assistant_msg)
 
-        messages.append({"role": "assistant", "content": assistant_content})
-
-        if not tool_uses:
-            reply = "\n".join(text_parts) if text_parts else "已处理。"
-            yield _sse("done", {"reply": reply, "changed_item_ids": list(dict.fromkeys(all_changed_ids)), "actions": actions})
+        if not msg.tool_calls:
+            yield _sse("done", {"reply": text or "已处理。", "changed_item_ids": list(dict.fromkeys(all_changed_ids)), "actions": all_actions})
             return
 
-        tool_results: list[dict[str, Any]] = []
-        for tu in tool_uses:
-            yield _sse("tool_start", {
-                "tool": tu["name"],
-                "label": _tool_label(tu["name"], tu["input"]),
-                "args": tu["input"],
-            })
-            result, ids = execute_tool(session, tu["name"], tu["input"], message)
+        for tc in msg.tool_calls:
+            args = json.loads(tc.function.arguments or "{}")
+            yield _sse("tool_start", {"tool": tc.function.name, "label": _tool_label(tc.function.name, args), "args": args})
+            result, ids = execute_tool(session, tc.function.name, args, message)
             all_changed_ids.extend(ids)
-            actions.append(f"{tu['name']}({json.dumps(tu['input'], ensure_ascii=False)})")
-            yield _sse("tool_end", {
-                "tool": tu["name"],
-                "label": _tool_label(tu["name"], tu["input"]),
-                "result": result[:500],
-            })
-            tool_results.append({"type": "tool_result", "tool_use_id": tu["id"], "content": result})
+            all_actions.append(f"{tc.function.name}({json.dumps(args, ensure_ascii=False)})")
+            yield _sse("tool_end", {"tool": tc.function.name, "label": _tool_label(tc.function.name, args), "result": result[:300]})
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 
-        messages.append({"role": "user", "content": tool_results})
-
-    yield _sse("done", {"reply": "操作步骤较多，请拆成更小的指令再试。", "changed_item_ids": list(dict.fromkeys(all_changed_ids)), "actions": actions})
+    yield _sse("done", {"reply": "操作步骤较多，请拆成更小的指令再试。", "changed_item_ids": list(dict.fromkeys(all_changed_ids)), "actions": all_actions})
