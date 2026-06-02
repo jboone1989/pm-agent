@@ -28,6 +28,8 @@ class Priority(str, Enum):
 class ActivitySource(str, Enum):
     user_message = "user_message"
     agent_action = "agent_action"
+    wechat = "wechat"
+    worklog = "worklog"
 
 
 class OperationAction(str, Enum):

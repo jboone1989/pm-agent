@@ -5,9 +5,11 @@ from sqlmodel import Session
 
 from app.db import get_session
 from app.schemas import (
+    ActivityLogCreate,
     ActivityLogRead,
     PersonSchedule,
     ProjectSchedule,
+    TimelineItem,
     WorkItemCreate,
     WorkItemRead,
     WorkItemUpdate,
@@ -18,14 +20,26 @@ from app.services import work_items as work_item_service
 router = APIRouter(prefix="/api/work-items", tags=["work-items"])
 
 
-def build_tree(items: list, parent_id: Optional[int] = None) -> list[WorkItemRead]:
-    nodes = [item for item in items if item.parent_id == parent_id]
-    result: list[WorkItemRead] = []
-    for node in sorted(nodes, key=lambda x: x.updated_at, reverse=True):
+def build_tree(items: list) -> list[WorkItemRead]:
+    children_map: dict[int, list] = {}
+    roots: list = []
+    for item in items:
+        children_map.setdefault(item.parent_id, []).append(item)
+    for node in children_map.get(None, []):
         data = WorkItemRead.model_validate(node, from_attributes=True)
-        data.children = build_tree(items, node.id)
-        result.append(data)
-    return result
+        _attach_children(data, children_map)
+        roots.append(data)
+    roots.sort(key=lambda x: x.updated_at, reverse=True)
+    return roots
+
+
+def _attach_children(parent: WorkItemRead, children_map: dict[int, list]) -> None:
+    children = children_map.get(parent.id, [])
+    parent.children = []
+    for node in sorted(children, key=lambda x: x.updated_at, reverse=True):
+        data = WorkItemRead.model_validate(node, from_attributes=True)
+        _attach_children(data, children_map)
+        parent.children.append(data)
 
 
 @router.get("", response_model=list[WorkItemRead])
@@ -91,3 +105,24 @@ def get_activities(item_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Work item not found")
     logs = work_item_service.get_activity_logs(session, item_id)
     return [ActivityLogRead.model_validate(log, from_attributes=True) for log in logs]
+
+
+@router.post("/{item_id}/activities", response_model=ActivityLogRead)
+def create_activity(item_id: int, payload: ActivityLogCreate, session: Session = Depends(get_session)):
+    log = work_item_service.add_activity(session, item_id, payload.content)
+    if not log:
+        raise HTTPException(status_code=404, detail="Work item not found")
+    return ActivityLogRead.model_validate(log, from_attributes=True)
+
+
+@router.delete("/{item_id}/activities/{activity_id}")
+def delete_activity(item_id: int, activity_id: int, session: Session = Depends(get_session)):
+    ok = work_item_service.delete_activity(session, activity_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Activity log not found")
+    return {"ok": True}
+
+
+@router.get("/{item_id}/timeline", response_model=list[TimelineItem])
+def get_timeline(item_id: int, session: Session = Depends(get_session)):
+    return work_item_service.get_timeline(session, item_id)

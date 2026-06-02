@@ -10,6 +10,8 @@ const state = {
   collapsedItemIds: new Set(),
 };
 
+const dragState = { itemId: null, itemTitle: null };
+
 const STATUS_LABELS = {
   todo: "待办",
   in_progress: "进行中",
@@ -53,6 +55,13 @@ const createTaskModal = document.getElementById("createTaskModal");
 const appToast = document.getElementById("appToast");
 const assigneeOptions = document.getElementById("assigneeOptions");
 const toggleChatBtn = document.getElementById("toggleChatBtn");
+const timelineModal = document.getElementById("timelineModal");
+const timelineModalTitle = document.getElementById("timelineModalTitle");
+const timelineModalBody = document.getElementById("timelineModalBody");
+const timelineQuickInput = document.getElementById("timelineQuickInput");
+const editModal = document.getElementById("editModal");
+const editModalTitle = document.getElementById("editModalTitle");
+const editModalBody = document.getElementById("editModalBody");
 
 const mentionState = {
   open: false,
@@ -433,6 +442,40 @@ function renderTableHead() {
   `;
 }
 
+function renderRootDropZone() {
+  return `<div class="drop-zone root-drop-zone" data-drop-parent=""><span class="drop-zone-label">拖到此处设为顶层任务</span></div>`;
+}
+
+function findParentIdInTree(tree, childId) {
+  for (const item of tree) {
+    if (item.children) {
+      for (const child of item.children) {
+        if (child.id === childId) return item.id;
+      }
+      const found = findParentIdInTree(item.children, childId);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+function isDescendantOf(draggedId, targetId) {
+  let current = targetId;
+  while (current) {
+    if (current === draggedId) return true;
+    current = findParentIdInTree(state.items, current);
+  }
+  return false;
+}
+
+async function moveWorkItem(itemId, newParentId) {
+  await fetchJson(`/api/work-items/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ parent_id: newParentId }),
+  });
+  await loadData();
+}
+
 function isItemCollapsed(itemId) {
   return state.collapsedItemIds.has(itemId);
 }
@@ -515,7 +558,7 @@ function renderCompactRow(item, { inTree = false, showFollowReason = false } = {
   const followReason = showFollowReason ? getFollowUpReason(item) : "";
 
   return `
-    <div class="task-row clickable${isDone ? " task-row--done" : ""}" data-item-id="${item.id}" data-item-title="${escapeHtml(item.title)}">
+    <div class="task-row clickable${isDone ? " task-row--done" : ""}" data-item-id="${item.id}" data-item-title="${escapeHtml(item.title)}" draggable="true">
       ${renderTitleCell(item, { inTree })}
       <span class="task-badges">
         ${showFollowReason ? badge(followReason, `follow-${followReason === "超期" ? "overdue" : followReason === "临期" ? "warning" : "active"}`) : ""}
@@ -798,6 +841,7 @@ function renderFollowUpView() {
           ${activeCount ? `<span class="followup-stat active">${activeCount} 进行中</span>` : ""}
         </div>
       </div>
+      ${renderRootDropZone()}
       ${renderTableHead()}
       ${items.map((item) => `<div class="tree-node">${renderCompactRow(item, { showFollowReason: true })}</div>`).join("")}
     </section>
@@ -809,7 +853,7 @@ function renderListView() {
     viewContent.innerHTML = `<div class="empty">还没有工作项。点击右上角「Agent 对话」创建工作，或让 Agent 帮你整理。</div>`;
     return;
   }
-  viewContent.innerHTML = renderTableHead() + state.items.map((item) => renderTreeItem(item)).join("");
+  viewContent.innerHTML = renderRootDropZone() + renderTableHead() + state.items.map((item) => renderTreeItem(item)).join("");
 }
 
 function renderPersonView() {
@@ -818,7 +862,7 @@ function renderPersonView() {
     return;
   }
 
-  viewContent.innerHTML = state.personSchedules
+  viewContent.innerHTML = renderRootDropZone() + state.personSchedules
     .map(
       (person) => `
         <section class="schedule-section">
@@ -931,7 +975,7 @@ function renderProjectView() {
     return;
   }
 
-  viewContent.innerHTML = state.items
+  viewContent.innerHTML = renderRootDropZone() + state.items
     .map(
       (project) => `
         <section class="project-section">
@@ -1028,25 +1072,30 @@ async function openDetail(itemId) {
         <button type="button" class="btn secondary" id="openSubtaskFormBtn">+ 添加子任务</button>
       </div>
     </div>
+    <section class="detail-timeline-section">
+      <h4>进展时间线</h4>
+      ${
+        activities.length
+          ? `<div class="timeline">${activities
+              .map(
+                (log) => `
+                <div class="timeline-item">
+                  <div class="timeline-dot"></div>
+                  <div class="timeline-card">
+                    <div class="timeline-content">${escapeHtml(log.content)}</div>
+                    <div class="timeline-meta">${escapeHtml(formatLogTime(log.created_at))} · ${escapeHtml(log.source)}</div>
+                  </div>
+                </div>
+              `
+              )
+              .join("")}</div>`
+          : `<div class="empty">暂无进展记录</div>`
+      }
+    </section>
     <section class="weekly-section">
       <h4>子任务（${children.length}）</h4>
       ${renderSubtaskList(children)}
     </section>
-    <h4>进展记录</h4>
-    ${
-      activities.length
-        ? activities
-            .map(
-              (log) => `
-                <div class="activity">
-                  <div>${escapeHtml(log.content)}</div>
-                  <div class="task-dates">${escapeHtml(log.created_at)} · ${escapeHtml(log.source)}</div>
-                </div>
-              `
-            )
-            .join("")
-        : `<div class="empty">暂无进展记录</div>`
-    }
   `;
 
   bindProgressInputs(
@@ -1057,6 +1106,254 @@ async function openDetail(itemId) {
 
   closeSubtaskModal();
   detailDrawer.classList.remove("hidden");
+}
+
+const TIMELINE_TYPE_LABELS = {
+  create: "创建",
+  status: "状态变更",
+  progress: "进度更新",
+  note: "进展记录",
+  assignee: "负责人",
+  parent: "层级调整",
+  priority: "优先级",
+  date: "日期",
+  type: "类型",
+};
+
+function formatTimelineContent(event) {
+  if (event.type === "note") {
+    return escapeHtml(event.content);
+  }
+  // For operation log messages like "更新「title」：status old → new"
+  const colon = event.content.indexOf("：");
+  if (colon > -1) {
+    const detail = event.content.slice(colon + 1);
+    return `<span class="tl-change">${escapeHtml(detail)}</span>`;
+  }
+  return escapeHtml(event.content);
+}
+
+function formatTimelineTime(createdAt) {
+  if (!createdAt) return "";
+  const dt = createdAt.replace("T", " ").slice(0, 16);
+  const parts = dt.split(" ");
+  if (parts.length === 2) {
+    const dateShort = parts[0].length >= 10 ? parts[0].slice(5) : parts[0];
+    return `${dateShort} ${parts[1]}`;
+  }
+  return dt;
+}
+
+async function openEditModal(itemId) {
+  const item = await fetchJson(`/api/work-items/${itemId}`);
+  if (!item) return;
+
+  editModalTitle.textContent = item.title;
+  editModalBody.innerHTML = `
+    <div class="detail-form">
+      <label>负责人</label>
+      <input id="editAssignee" list="assigneeOptions" value="${escapeHtml(item.assignee || "")}" placeholder="输入或选择负责人" />
+      <label>开始日期</label>
+      <input id="editStartDate" type="date" value="${escapeHtml(item.start_date || "")}" />
+      <label>截止日期</label>
+      <input id="editDueDate" type="date" value="${escapeHtml(item.due_date || "")}" />
+      <label>进度 (%)</label>
+      <div class="progress-editor-inline">
+        <input id="editProgressRange" type="range" min="0" max="100" value="${clampProgress(item.progress ?? 0)}" />
+        <input id="editProgress" class="progress-number" type="number" min="0" max="100" value="${clampProgress(item.progress ?? 0)}" />
+        <span id="editProgressLabel" class="progress-value">${clampProgress(item.progress ?? 0)}%</span>
+      </div>
+      ${renderProgressBar(item.progress ?? 0)}
+      <label>状态</label>
+      <select id="editStatus">${renderSelectOptions(STATUS_LABELS, item.status)}</select>
+      <label>类型</label>
+      <select id="editType">${renderSelectOptions(TYPE_LABELS, item.type)}</select>
+      <label>优先级</label>
+      <select id="editPriority">${renderSelectOptions(PRIORITY_LABELS, item.priority)}</select>
+      <label>描述</label>
+      <textarea id="editDescription" rows="3" placeholder="可选">${escapeHtml(item.description || "")}</textarea>
+      <div class="detail-actions">
+        <button type="button" class="btn primary" id="saveEditItem">保存修改</button>
+        <button type="button" class="btn danger" id="deleteEditItem">删除任务</button>
+      </div>
+    </div>
+  `;
+
+  editModal.dataset.itemId = itemId;
+  editModal.classList.remove("hidden");
+
+  bindProgressInputs(
+    document.getElementById("editProgressRange"),
+    document.getElementById("editProgress"),
+    document.getElementById("editProgressLabel")
+  );
+}
+
+function closeEditModal() {
+  editModal.classList.add("hidden");
+}
+
+editModal.addEventListener("click", (event) => {
+  if (event.target === editModal) closeEditModal();
+});
+document.getElementById("closeEditModal").addEventListener("click", closeEditModal);
+
+editModalBody.addEventListener("click", async (event) => {
+  const itemId = Number(editModal.dataset.itemId);
+  if (!itemId) return;
+
+  if (event.target.id === "saveEditItem") {
+    try {
+      await updateWorkItemFields(itemId, {
+        assignee: document.getElementById("editAssignee").value.trim() || null,
+        start_date: document.getElementById("editStartDate").value || null,
+        due_date: document.getElementById("editDueDate").value || null,
+        progress: clampProgress(document.getElementById("editProgress").value),
+        status: document.getElementById("editStatus").value,
+        type: document.getElementById("editType").value,
+        priority: document.getElementById("editPriority").value,
+        description: document.getElementById("editDescription").value.trim(),
+      });
+      closeEditModal();
+      showAppToast("已保存修改", "success");
+      await loadData();
+      if (timelineModal.dataset.itemId) {
+        await openTimelineModal(Number(timelineModal.dataset.itemId), false);
+      }
+    } catch (error) {
+      showAppToast(`保存失败：${error.message}`, "error");
+    }
+    return;
+  }
+
+  if (event.target.id === "deleteEditItem") {
+    const title = editModalTitle.textContent;
+    await deleteWorkItem(itemId, title);
+    closeEditModal();
+    closeTimelineModal();
+  }
+});
+
+let timelineNavStack = [];
+
+async function openTimelineModal(itemId, pushToStack = true) {
+  const [item, events] = await Promise.all([
+    fetchJson(`/api/work-items/${itemId}`),
+    fetchJson(`/api/work-items/${itemId}/timeline`),
+  ]);
+  const treeItem = findItemInTree(state.items, itemId);
+  const children = treeItem?.children || [];
+
+  if (pushToStack && timelineModal.dataset.itemId) {
+    timelineNavStack.push(Number(timelineModal.dataset.itemId));
+  } else if (!pushToStack) {
+    timelineNavStack = [];
+  }
+
+  const backBtn = timelineNavStack.length
+    ? `<button type="button" class="btn-timeline-back" id="timelineBackBtn" title="返回上级任务">← 返回</button>`
+    : "";
+  timelineModalTitle.innerHTML = `${backBtn}${escapeHtml(item.title)}`;
+  timelineModalBody.innerHTML = `
+    <div class="timeline-meta-bar">
+      <span>${escapeHtml(STATUS_LABELS[item.status] || item.status)}</span>
+      <span>进度 ${clampProgress(item.progress ?? 0)}%</span>
+      <span>${escapeHtml(item.assignee || "未分配")}</span>
+      ${children.length ? `<span>${children.length} 个子任务</span>` : ""}
+    </div>
+    ${children.length ? `<div class="mb-12">${renderSubtaskList(children)}</div>` : ""}
+    ${
+      events.length
+        ? `<div class="h-timeline-wrap"><div class="h-timeline">${events
+            .map(
+              (e, i) => `
+              <div class="h-timeline-item" data-tl-index="${i}">
+                <div class="h-timeline-dot h-tl-${e.type}"></div>
+                <div class="h-timeline-card">
+                  <div class="h-timeline-type">${escapeHtml(TIMELINE_TYPE_LABELS[e.type] || e.type)}</div>
+                  <div class="h-timeline-content">${formatTimelineContent(e)}</div>
+                  <div class="h-timeline-time">${escapeHtml(formatTimelineTime(e.created_at))}</div>
+                </div>
+              </div>
+            `
+            )
+            .join("")}</div>
+          <div class="h-timeline-detail" id="timelineDetail" style="display:none">
+            <div class="h-timeline-detail-content" id="timelineDetailContent"></div>
+            <div class="h-timeline-detail-meta" id="timelineDetailMeta"></div>
+          </div>
+        </div>`
+        : `<div class="empty">暂无进展记录，在下方输入第一条。</div>`
+    }
+  `;
+
+  // Store events for detail view
+  timelineModal._events = events;
+
+  timelineModal.dataset.itemId = itemId;
+  timelineQuickInput.value = "";
+  timelineModal.classList.remove("hidden");
+  timelineQuickInput.focus();
+}
+
+function showTimelineDetail(event, clickedEl) {
+  const detailEl = document.getElementById("timelineDetail");
+  const contentEl = document.getElementById("timelineDetailContent");
+  const metaEl = document.getElementById("timelineDetailMeta");
+
+  if (!detailEl || !contentEl || !metaEl) return;
+
+  const wasActive = clickedEl.classList.contains("h-timeline-item--active");
+  document.querySelectorAll(".h-timeline-item--active").forEach((el) => el.classList.remove("h-timeline-item--active"));
+
+  if (wasActive) {
+    detailEl.style.display = "none";
+    return;
+  }
+
+  clickedEl.classList.add("h-timeline-item--active");
+  contentEl.textContent = event.content;
+  metaEl.innerHTML = `
+    <span>${escapeHtml(formatTimelineTime(event.created_at))}</span>
+    <span>来源: ${escapeHtml(event.detail || "手动")}</span>
+    <button type="button" class="btn-timeline-delete" data-delete-activity-id="${event.id}">删除</button>
+  `;
+  detailEl.style.display = "block";
+}
+
+async function deleteTimelineActivity(activityId) {
+  const itemId = Number(timelineModal.dataset.itemId);
+  if (!itemId || !activityId) return;
+  if (!window.confirm("确定删除这条进展记录吗？")) return;
+  try {
+    await fetchJson(`/api/work-items/${itemId}/activities/${activityId}`, { method: "DELETE" });
+    await loadData();
+    await openTimelineModal(itemId, false);
+  } catch (error) {
+    showAppToast(`删除失败：${error.message}`, "error");
+  }
+}
+
+function closeTimelineModal() {
+  timelineModal.classList.add("hidden");
+  timelineModal.dataset.itemId = "";
+}
+
+async function submitTimelineProgress() {
+  const itemId = Number(timelineModal.dataset.itemId);
+  if (!itemId) return;
+  const content = timelineQuickInput.value.trim();
+  if (!content) return;
+  try {
+    await fetchJson(`/api/work-items/${itemId}/activities`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    });
+    await loadData();
+    await openTimelineModal(itemId);
+  } catch (error) {
+    showAppToast(`添加失败：${error.message}`, "error");
+  }
 }
 
 detailBody.addEventListener("click", async (event) => {
@@ -1164,7 +1461,94 @@ viewContent.addEventListener("click", async (event) => {
 
   const row = event.target.closest(".task-row");
   if (row) {
-    await openDetail(Number(row.dataset.itemId));
+    const itemId = Number(row.dataset.itemId);
+    await openTimelineModal(itemId);
+  }
+});
+
+// Drag & Drop event delegation
+viewContent.addEventListener("dragstart", (event) => {
+  const row = event.target.closest(".task-row");
+  if (!row) return;
+  const itemId = Number(row.dataset.itemId);
+  if (!itemId) return;
+  dragState.itemId = itemId;
+  dragState.itemTitle = row.dataset.itemTitle || "";
+  row.classList.add("dragging");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", String(itemId));
+  document.body.classList.add("is-dragging");
+});
+
+document.addEventListener("dragend", () => {
+  document.body.classList.remove("is-dragging");
+  document.querySelectorAll(".task-row.dragging, .task-row.drag-over, .task-row.drag-invalid, .drop-zone.active")
+    .forEach((el) => el.classList.remove("dragging", "drag-over", "drag-invalid", "active"));
+  dragState.itemId = null;
+  dragState.itemTitle = null;
+});
+
+viewContent.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  if (!dragState.itemId) return;
+
+  const dropZone = event.target.closest(".drop-zone");
+  const row = event.target.closest(".task-row");
+
+  // Clear previous highlights
+  document.querySelectorAll(".task-row.drag-over, .task-row.drag-invalid, .drop-zone.active")
+    .forEach((el) => el.classList.remove("drag-over", "drag-invalid", "active"));
+
+  if (dropZone) {
+    dropZone.classList.add("active");
+    event.dataTransfer.dropEffect = "move";
+    return;
+  }
+
+  if (!row || row.classList.contains("dragging")) {
+    event.dataTransfer.dropEffect = "none";
+    return;
+  }
+
+  const targetId = Number(row.dataset.itemId);
+  if (!targetId || targetId === dragState.itemId || isDescendantOf(dragState.itemId, targetId)) {
+    row.classList.add("drag-invalid");
+    event.dataTransfer.dropEffect = "none";
+    return;
+  }
+
+  row.classList.add("drag-over");
+  event.dataTransfer.dropEffect = "move";
+});
+
+viewContent.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  if (!dragState.itemId) return;
+
+  const dropZone = event.target.closest(".drop-zone");
+  if (dropZone) {
+    const parentId = dropZone.dataset.dropParent === "" ? null : (Number(dropZone.dataset.dropParent) || null);
+    try {
+      await moveWorkItem(dragState.itemId, parentId);
+      showAppToast(`已将「${dragState.itemTitle}」移至顶层`, "success");
+    } catch (error) {
+      showAppToast(`移动失败：${error.message}`, "error");
+    }
+    return;
+  }
+
+  const row = event.target.closest(".task-row");
+  if (!row || row.classList.contains("dragging")) return;
+
+  const targetId = Number(row.dataset.itemId);
+  if (!targetId || targetId === dragState.itemId || isDescendantOf(dragState.itemId, targetId)) return;
+
+  try {
+    await moveWorkItem(dragState.itemId, targetId);
+    const targetTitle = row.dataset.itemTitle || "";
+    showAppToast(`已将「${dragState.itemTitle}」移至「${targetTitle}」下`, "success");
+  } catch (error) {
+    showAppToast(`移动失败：${error.message}`, "error");
   }
 });
 
@@ -1282,7 +1666,7 @@ chatForm.addEventListener("submit", async (event) => {
             if (!streamingEl) {
               streamingEl = appendMessage("assistant", "");
             }
-            streamingEl.innerHTML += formatChatMessage(payload.text);
+            streamingEl.insertAdjacentHTML("beforeend", formatChatMessage(payload.text));
             chatMessages.scrollTop = chatMessages.scrollHeight;
           } else if (eventType === "tool_start") {
             if (thinkingMsg && thinkingMsg.parentNode) {
@@ -1380,6 +1764,55 @@ document.getElementById("submitCreateTask").addEventListener("click", async () =
   } finally {
     button.disabled = false;
     button.textContent = oldText;
+  }
+});
+
+// Timeline modal events
+document.getElementById("closeTimelineModal").addEventListener("click", closeTimelineModal);
+timelineModal.addEventListener("click", (event) => {
+  if (event.target === timelineModal) closeTimelineModal();
+});
+document.getElementById("submitTimelineProgress").addEventListener("click", submitTimelineProgress);
+timelineQuickInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    submitTimelineProgress();
+  }
+});
+timelineModalTitle.addEventListener("click", (event) => {
+  const backBtn = event.target.closest("#timelineBackBtn");
+  if (backBtn && timelineNavStack.length) {
+    const prevId = timelineNavStack.pop();
+    openTimelineModal(prevId, false);
+  }
+});
+document.getElementById("openDetailFromTimeline").addEventListener("click", async () => {
+  const itemId = Number(timelineModal.dataset.itemId);
+  if (!itemId) return;
+  await openEditModal(itemId);
+});
+timelineModalBody.addEventListener("click", async (event) => {
+  const tlItem = event.target.closest(".h-timeline-item");
+  if (tlItem) {
+    const idx = Number(tlItem.dataset.tlIndex);
+    const events = timelineModal._events;
+    if (events && events[idx]) {
+      showTimelineDetail(events[idx], tlItem);
+    }
+    return;
+  }
+
+  const link = event.target.closest("[data-open-item-id]");
+  if (link) {
+    event.preventDefault();
+    const itemId = Number(link.dataset.openItemId);
+    if (itemId) await openTimelineModal(itemId);
+  }
+
+  const delBtn = event.target.closest("[data-delete-activity-id]");
+  if (delBtn) {
+    event.preventDefault();
+    await deleteTimelineActivity(Number(delBtn.dataset.deleteActivityId));
   }
 });
 

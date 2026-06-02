@@ -5,7 +5,7 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from app.models import ActivityLog, ActivitySource, OperationAction, WorkItem, WorkItemStatus, WorkItemType
-from app.schemas import WorkItemCreate, WorkItemUpdate
+from app.schemas import TimelineItem, WorkItemCreate, WorkItemUpdate
 from app.services import operation_log as op_log
 from app.services.operation_log import describe_update
 
@@ -104,6 +104,15 @@ def add_activity(
     return log
 
 
+def delete_activity(session: Session, activity_id: int) -> bool:
+    log = session.get(ActivityLog, activity_id)
+    if not log:
+        return False
+    session.delete(log)
+    session.commit()
+    return True
+
+
 def search_work_items(
     session: Session,
     query: str = "",
@@ -165,7 +174,11 @@ def get_activity_logs(session: Session, work_item_id: int) -> list[ActivityLog]:
 
 def get_root_item(session: Session, item: WorkItem) -> WorkItem:
     current = item
+    seen = {current.id}
     while current.parent_id:
+        if current.parent_id in seen:
+            break
+        seen.add(current.parent_id)
         parent = session.get(WorkItem, current.parent_id)
         if not parent:
             break
@@ -182,3 +195,27 @@ def split_work_item(session: Session, parent_id: int, children: list[WorkItemCre
         payload = child_data.model_copy(update={"parent_id": parent_id})
         created.append(create_work_item(session, payload))
     return created
+
+
+def get_timeline(session: Session, item_id: int) -> list[TimelineItem]:
+    item = session.get(WorkItem, item_id)
+    if not item:
+        return []
+
+    events: list[TimelineItem] = []
+
+    activity_stmt = (
+        select(ActivityLog)
+        .where(ActivityLog.work_item_id == item_id)
+        .order_by(ActivityLog.created_at.asc())
+    )
+    for log in session.exec(activity_stmt).all():
+        events.append(TimelineItem(
+            id=log.id,
+            type="note",
+            content=log.content,
+            detail=log.source.value,
+            created_at=log.created_at,
+        ))
+
+    return events

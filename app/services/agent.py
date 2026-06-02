@@ -360,7 +360,7 @@ def run_agent(session: Session, message: str) -> tuple[str, list[str], list[int]
 
 
 def run_agent_stream(session: Session, message: str) -> Generator[str, None, None]:
-    """SSE streaming generator — non-streaming LLM call, streamed to frontend."""
+    """SSE streaming generator with streaming LLM calls for real-time text display."""
     if not LLM_API_KEY:
         yield _sse("text", {"text": "请先在 .env 中配置 LLM_API_KEY 后再使用 Agent。"})
         yield _sse("done", {"reply": "未配置 API Key", "changed_item_ids": [], "actions": []})
@@ -375,31 +375,102 @@ def run_agent_stream(session: Session, message: str) -> Generator[str, None, Non
     for _ in range(MAX_ROUNDS):
         yield _sse("status", {"text": "正在思考..."})
 
-        response = client.chat.completions.create(
-            model=LLM_MODEL, messages=messages, tools=TOOLS, tool_choice="auto"
+        stream = client.chat.completions.create(
+            model=LLM_MODEL, messages=messages, tools=TOOLS, tool_choice="auto",
+            stream=True,
         )
-        choice = response.choices[0]
-        msg = choice.message
 
-        # Stream text character by character for frontend feel
-        text = msg.content or ""
-        for i in range(0, len(text), 3):
-            yield _sse("text", {"text": text[i:i+3]})
+        content_parts = []
+        tc_accum: dict[int, dict] = {}  # index → {id, name, arguments_parts}
+        text_buf = ""
 
-        assistant_msg = msg.model_dump(exclude_none=True)
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta is None:
+                continue
+
+            if delta.content:
+                content_parts.append(delta.content)
+                text_buf += delta.content
+                if len(text_buf) >= 30 or any(text_buf.endswith(c) for c in ("。", "！", "？")):
+                    yield _sse("text", {"text": text_buf})
+                    text_buf = ""
+
+            if delta.tool_calls:
+                if text_buf:
+                    yield _sse("text", {"text": text_buf})
+                    text_buf = ""
+                for tc_chunk in delta.tool_calls:
+                    idx = tc_chunk.index
+                    if idx not in tc_accum:
+                        tc_accum[idx] = {"id": "", "name": "", "arguments_parts": []}
+
+                    entry = tc_accum[idx]
+                    if tc_chunk.id:
+                        entry["id"] = tc_chunk.id
+                    if tc_chunk.function:
+                        if tc_chunk.function.name and not entry["name"]:
+                            entry["name"] = tc_chunk.function.name
+                            if text_buf:
+                                yield _sse("text", {"text": text_buf})
+                                text_buf = ""
+                            yield _sse("tool_start", {
+                                "tool": tc_chunk.function.name,
+                                "label": _tool_label(tc_chunk.function.name, {}),
+                                "args": {},
+                            })
+                        if tc_chunk.function.arguments:
+                            entry["arguments_parts"].append(tc_chunk.function.arguments)
+
+        if text_buf:
+            yield _sse("text", {"text": text_buf})
+
+        content = "".join(content_parts)
+
+        tool_calls = []
+        for idx in sorted(tc_accum.keys()):
+            entry = tc_accum[idx]
+            args_str = "".join(entry["arguments_parts"])
+            tool_calls.append({
+                "id": entry["id"],
+                "type": "function",
+                "function": {"name": entry["name"], "arguments": args_str},
+            })
+
+        assistant_msg = {"role": "assistant", "content": content}
+        if tool_calls:
+            assistant_msg["tool_calls"] = tool_calls
         messages.append(assistant_msg)
 
-        if not msg.tool_calls:
-            yield _sse("done", {"reply": text or "已处理。", "changed_item_ids": list(dict.fromkeys(all_changed_ids)), "actions": all_actions})
+        if not tool_calls:
+            yield _sse("done", {
+                "reply": content or "已处理。",
+                "changed_item_ids": list(dict.fromkeys(all_changed_ids)),
+                "actions": all_actions,
+            })
             return
 
-        for tc in msg.tool_calls:
-            args = json.loads(tc.function.arguments or "{}")
-            yield _sse("tool_start", {"tool": tc.function.name, "label": _tool_label(tc.function.name, args), "args": args})
-            result, ids = execute_tool(session, tc.function.name, args, message)
+        for tc_item in tool_calls:
+            name = tc_item["function"]["name"]
+            args = json.loads(tc_item["function"]["arguments"] or "{}")
+            result, ids = execute_tool(session, name, args, message)
             all_changed_ids.extend(ids)
-            all_actions.append(f"{tc.function.name}({json.dumps(args, ensure_ascii=False)})")
-            yield _sse("tool_end", {"tool": tc.function.name, "label": _tool_label(tc.function.name, args), "result": result[:300]})
-            messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+            all_actions.append(f"{name}({json.dumps(args, ensure_ascii=False)})")
+            yield _sse("tool_end", {
+                "tool": name,
+                "label": _tool_label(name, args),
+                "result": result[:300],
+            })
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc_item["id"],
+                "content": result,
+            })
 
-    yield _sse("done", {"reply": "操作步骤较多，请拆成更小的指令再试。", "changed_item_ids": list(dict.fromkeys(all_changed_ids)), "actions": all_actions})
+    yield _sse("done", {
+        "reply": "操作步骤较多，请拆成更小的指令再试。",
+        "changed_item_ids": list(dict.fromkeys(all_changed_ids)),
+        "actions": all_actions,
+    })

@@ -57,6 +57,13 @@ Every work item change or agent action is recorded in `ActivityLog`:
 - `content`: Note/summary of what happened
 - Human-readable history visible in task detail view
 
+**Progress normalization** (`services/work_items.py::normalize_progress`):
+- Setting progress to 100 auto-transitions status → `done`
+- Setting progress > 0 when status is `todo` auto-transitions → `in_progress`
+- This runs on both create and update, so the agent doesn't need to set status explicitly for progress changes
+
+**Cascade delete**: `delete_work_item()` recursively deletes children and their activity logs. There is no soft-delete.
+
 ### 3. LLM Agent (Tool-Based Loop)
 
 **Location**: `app/services/agent.py::run_agent(session, message)`
@@ -111,19 +118,23 @@ This makes agent decisions more natural: `"项目 A 的后端开发"` automatica
 
 ```python
 # app/routers/work_items.py
-GET    /api/work_items              # List all (with tree nesting)
-GET    /api/work_items/{id}         # Get single + children
+GET    /api/work_items              # List all (tree-nested by parent_id)
+GET    /api/work_items/flat         # Flat list (no nesting)
+GET    /api/work_items/{id}         # Get single work item
 POST   /api/work_items              # Create (WorkItemCreate → WorkItemRead)
 PATCH  /api/work_items/{id}         # Update (WorkItemUpdate → WorkItemRead)
-DELETE /api/work_items/{id}         # Soft/hard delete
-GET    /api/work_items/search       # Fuzzy search (query, assignee, status, type, limit)
+DELETE /api/work_items/{id}         # Hard delete (cascades to children + activity logs)
+GET    /api/work_items/{id}/activities  # Get activity log for a work item
+GET    /api/work_items/schedules/by-person  # Tasks grouped by assignee
+GET    /api/work_items/schedules/by-project  # Tasks grouped by root project (optional ?project_id=)
+GET    /api/work_items/meta/assignees  # Distinct assignee names
 
 # app/routers/chat.py
 POST   /api/chat                    # ChatRequest → ChatResponse (reply, actions, changed_item_ids)
 
 # app/routers/weekly_log.py
-GET    /api/weekly_log/{week_key}   # Operations in a week + generated report
-POST   /api/weekly_log/{week_key}/report  # Trigger LLM-based weekly summary
+GET    /api/weekly-log              # Operations in a week (optional ?week=YYYY-WNN)
+POST   /api/weekly-log/generate     # Trigger LLM-based weekly summary (optional ?week=)
 ```
 
 ### Session Dependency
@@ -146,7 +157,6 @@ def example(session: Session = Depends(get_session)):
 id, title, description, parent_id, type, status, assignee, start_date, due_date, priority, progress, created_at, updated_at
 ```
 - Self-referential: parent_id → workitem.id
-- No cascading delete by default (preserve history)
 
 ### ActivityLog
 ```python
@@ -171,12 +181,12 @@ id, week_key, this_week_summary, next_week_plan, generated_at
 
 | Task | File(s) |
 |------|---------|
-| Add new work item field | `models.py` (SQLModel), `schemas.py` (Pydantic), migrations if needed |
+| Add new work item field | `models.py` (SQLModel), `schemas.py` (Pydantic), `db.py::migrate_db()` |
 | Add new API endpoint | `routers/*.py` (define route + logic) |
 | Add new agent tool | `agent.py` (TOOLS list + execute_tool branch) |
 | Change LLM behavior | `agent.py` (SYSTEM_PROMPT, argument normalization, tool definitions) |
 | Add activity types | `models.py` (ActivitySource enum) |
-| Modify DB schema | `models.py` (SQLModel table), then `db.py` (if needed to recreate) |
+| Modify DB schema | `models.py` (SQLModel table), then `db.py::migrate_db()` (add ALTER TABLE) |
 | Add search filters | `services/work_items.py::search_work_items()` |
 | Implement weekly logic | `services/weekly_report.py`, `routers/weekly_log.py` |
 
@@ -184,7 +194,6 @@ id, week_key, this_week_summary, next_week_plan, generated_at
 
 ### Start Dev Server
 ```powershell
-cd C:\Users\JBoon\Projects\pm-agent
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -193,11 +202,19 @@ uvicorn app.main:app --reload
 ```
 Runs on `http://127.0.0.1:8000`
 
+There are no automated tests in this project.
+
 ### Environment Variables (load from `.env`)
 - `DATABASE_URL` — Default: `sqlite:///./pm_agent.db` (relative to cwd)
 - `LLM_API_KEY` — OpenAI API key (fallback: `OPENAI_API_KEY`)
 - `LLM_MODEL` — Model name, e.g. `deepseek-ai/DeepSeek-V3.2` (fallback: `OPENAI_MODEL`, default: `gpt-4o-mini`)
 - `LLM_API_BASE` — Base URL for OpenAI-compatible API (default: `https://api.openai.com/v1`)
+
+`config.py` auto-appends `/v1` to `LLM_API_BASE` if not already present via `normalize_llm_base_url()`.
+
+### DB Migrations
+
+There is no migration framework. `db.py::migrate_db()` runs on every startup and performs lightweight, idempotent schema changes (e.g., adding the `progress` column if missing). Add new columns here following the same pattern: check `inspector.get_columns()` first, then `ALTER TABLE` only if the column is absent.
 
 ### Debugging Agent Behavior
 1. **Check system prompt** in `agent.py::SYSTEM_PROMPT` — controls decision-making

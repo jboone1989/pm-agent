@@ -64,6 +64,18 @@ class ActivityLogRead(BaseModel):
     created_at: datetime
 
 
+class ActivityLogCreate(BaseModel):
+    content: str
+
+
+class TimelineItem(BaseModel):
+    id: int
+    type: str  # "create", "status", "progress", "note", "assignee", "date"
+    content: str
+    detail: str = ""
+    created_at: datetime
+
+
 class ChatRequest(BaseModel):
     message: str
 

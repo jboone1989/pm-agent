@@ -114,6 +114,33 @@
       </div>
     </div>
 
+    <div id="timelineModal" class="timeline-modal hidden">
+      <div class="timeline-modal-card">
+        <div class="timeline-modal-header">
+          <h3 id="timelineModalTitle"></h3>
+          <div class="timeline-modal-header-actions">
+            <button type="button" class="btn secondary sm" id="openDetailFromTimeline">编辑详情</button>
+            <button type="button" class="btn secondary sm" id="closeTimelineModal">关闭</button>
+          </div>
+        </div>
+        <div class="timeline-modal-body" id="timelineModalBody"></div>
+        <div class="timeline-modal-footer">
+          <textarea id="timelineQuickInput" rows="2" placeholder="快速添加进展...（Ctrl+Enter 提交）"></textarea>
+          <button type="button" class="btn primary sm" id="submitTimelineProgress">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="editModal" class="timeline-modal hidden">
+      <div class="timeline-modal-card">
+        <div class="timeline-modal-header">
+          <h3 id="editModalTitle"></h3>
+          <button type="button" class="btn secondary sm" id="closeEditModal">关闭</button>
+        </div>
+        <div class="timeline-modal-body" id="editModalBody"></div>
+      </div>
+    </div>
+
     <div id="appToast" class="app-toast hidden"></div>
   </div>
 
