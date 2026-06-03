@@ -787,15 +787,23 @@ function renderSubtaskList(children, activityMap = {}) {
     .map(
       (child) => {
         const lastAct = activityMap[child.id];
-        const badge = lastAct
+        const actBadge = lastAct
           ? `<span class="subtask-badge" title="${escapeHtml(lastAct)}">${escapeHtml(truncateActivity(lastAct))}</span>`
           : "";
+        const progress = clampProgress(child.progress ?? 0);
         return `
         <li>
           <a href="#" class="subtask-link" data-open-item-id="${child.id}">
-            ${escapeHtml(child.title)} · ${clampProgress(child.progress ?? 0)}% · ${escapeHtml(STATUS_LABELS[child.status] || child.status)}
+            <div class="subtask-title">${escapeHtml(child.title)}</div>
+            <div class="subtask-meta">
+              ${badge(STATUS_LABELS[child.status] || child.status, `status-${child.status}`)}
+              <div class="progress-row" style="flex:1;max-width:100px">
+                <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
+                <span class="progress-pct">${progress}%</span>
+              </div>
+              ${actBadge}
+            </div>
           </a>
-          ${badge}
         </li>
       `;
       }

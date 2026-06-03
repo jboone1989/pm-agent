@@ -957,6 +957,21 @@ body {
 
 .subtask-link:hover {
   border-color: var(--primary);
+}
+
+.subtask-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+
+.subtask-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subtask-link:hover .subtask-title {
   color: var(--primary);
 }
 
