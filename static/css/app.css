@@ -1497,14 +1497,15 @@ body {
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .weekly-card-body {
   padding: 8px 14px;
+  max-height: 36px;
+  overflow: hidden;
 }
 
 .weekly-card-section {
@@ -1578,6 +1579,8 @@ body {
 
 .weekly-log-card-body {
   padding: 6px 14px;
+  max-height: 80px;
+  overflow: hidden;
 }
 
 .weekly-log-mini {
