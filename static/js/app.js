@@ -932,47 +932,43 @@ function renderWeeklyView() {
   const currentWeekKey = getCurrentWeekKey();
   const currentIdx = weeks.findIndex((w) => w.week_key === currentWeekKey);
 
-  const reportCards = weeks.map((w) => {
+  const reportCards = weeks.map((w, i) => {
     const isCurrent = w.week_key === currentWeekKey;
     const report = w.report;
+    const preview = report?.this_week_summary
+      ? report.this_week_summary.slice(0, 60) + (report.this_week_summary.length > 60 ? "…" : "")
+      : "（未生成）";
     return `
-      <div class="weekly-card${isCurrent ? " weekly-card-current" : ""}">
+      <div class="weekly-card${isCurrent ? " weekly-card-current" : ""}" data-week-idx="${i}">
         <div class="weekly-card-header">
           <span class="weekly-card-week">${escapeHtml(w.week_label)}</span>
           <span class="weekly-card-date">${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</span>
         </div>
         <div class="weekly-card-body">
-          <div class="weekly-card-section">
-            <h4>本周工作</h4>
-            <div class="weekly-card-text">${escapeHtml(report?.this_week_summary || "（未生成）")}</div>
-          </div>
-          ${report?.next_week_plan ? `
-          <div class="weekly-card-section">
-            <h4>下周计划</h4>
-            <div class="weekly-card-text">${escapeHtml(report.next_week_plan)}</div>
-          </div>` : ""}
+          <div class="weekly-card-preview">${escapeHtml(preview)}</div>
         </div>
       </div>`;
   }).join("");
 
-  const logCards = weeks.map((w) => {
+  const logCards = weeks.map((w, i) => {
+    const latest = w.entries[0];
     return `
-      <div class="weekly-log-card">
+      <div class="weekly-log-card" data-week-idx="${i}">
         <div class="weekly-log-card-header">
           <span class="weekly-card-week">${escapeHtml(w.week_label)}</span>
           <span class="weekly-card-date">${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</span>
           <span class="weekly-log-count">${w.entries.length} 条</span>
         </div>
         <div class="weekly-log-card-body">
-          ${w.entries.length
-            ? w.entries.map((e) => `
-              <div class="weekly-log-mini">
-                <span class="weekly-log-mini-time">${escapeHtml(formatLogTime(e.created_at))}</span>
-                <span class="weekly-log-mini-action">${escapeHtml(ACTION_LABELS[e.action] || e.action)}</span>
-                <span class="weekly-log-mini-msg">${escapeHtml(e.message)}</span>
-              </div>`).join("")
+          ${latest
+            ? `<div class="weekly-log-mini">
+              <span class="weekly-log-mini-time">${escapeHtml(formatLogTime(latest.created_at))}</span>
+              <span class="weekly-log-mini-action">${escapeHtml(ACTION_LABELS[latest.action] || latest.action)}</span>
+              <span class="weekly-log-mini-msg">${escapeHtml(latest.message)}</span>
+            </div>`
             : `<div class="weekly-log-mini empty">无记录</div>`
           }
+          ${w.entries.length > 1 ? `<div class="weekly-log-mini more">... 共 ${w.entries.length} 条，点击查看详情</div>` : ""}
         </div>
       </div>`;
   }).join("");
@@ -998,6 +994,15 @@ function renderWeeklyView() {
 
   document.getElementById("generateWeeklyBtn").addEventListener("click", generateWeeklyReport);
 
+  // Click to show detail modal
+  viewContent.querySelectorAll(".weekly-card, .weekly-log-card").forEach((card) => {
+    card.style.cursor = "pointer";
+    card.addEventListener("click", () => {
+      const idx = Number(card.dataset.weekIdx);
+      showWeekDetailModal(weeks[idx]);
+    });
+  });
+
   // Sync scroll between the two timelines
   const reportWrap = document.getElementById("reportTimeline");
   const logWrap = document.getElementById("logTimeline");
@@ -1011,13 +1016,58 @@ function renderWeeklyView() {
   reportWrap.addEventListener("scroll", () => syncScroll(reportWrap, logWrap));
   logWrap.addEventListener("scroll", () => syncScroll(logWrap, reportWrap));
 
-  // Scroll current week into view
   if (currentIdx >= 0) {
     const card = reportWrap.querySelectorAll(".weekly-card")[currentIdx];
     if (card) {
       card.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
     }
   }
+}
+
+function showWeekDetailModal(w) {
+  const report = w.report;
+  const html = `
+    <div class="app-modal" id="weekDetailModal">
+      <div class="app-modal-card" style="width:min(600px,100%);max-height:80vh">
+        <div class="app-modal-header">
+          <h4>${escapeHtml(w.week_label)}  ·  ${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</h4>
+          <button type="button" class="btn secondary sm" id="closeWeekDetailModal">关闭</button>
+        </div>
+        <div style="overflow-y:auto;max-height:55vh">
+          <div class="weekly-section">
+            <h3>本周工作</h3>
+            <div class="report-box">${escapeHtml(report?.this_week_summary || "（未生成）")}</div>
+          </div>
+          ${report?.next_week_plan ? `
+          <div class="weekly-section">
+            <h3>下周计划</h3>
+            <div class="report-box">${escapeHtml(report.next_week_plan)}</div>
+          </div>` : ""}
+          <div class="weekly-section">
+            <h3>操作记录（${w.entries.length} 条）</h3>
+            ${w.entries.length
+              ? `<div class="report-box" style="padding:0">${w.entries.map((e) => `
+                <div class="log-entry">
+                  <span class="log-time">${escapeHtml(formatLogTime(e.created_at))}</span>
+                  <span class="log-action">${escapeHtml(ACTION_LABELS[e.action] || e.action)}</span>
+                  <span class="log-message">${escapeHtml(e.message)}</span>
+                </div>`).join("")}</div>`
+              : `<div class="empty">本周没有操作记录</div>`
+            }
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.insertAdjacentHTML("beforeend", html);
+  const close = () => {
+    const m = document.getElementById("weekDetailModal");
+    if (m) m.remove();
+  };
+  document.getElementById("closeWeekDetailModal").addEventListener("click", close);
+  document.getElementById("weekDetailModal").addEventListener("click", (e) => {
+    if (e.target.id === "weekDetailModal") close();
+  });
 }
 
 async function loadWeeklyLog(weekKey = null) {
