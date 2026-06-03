@@ -57,3 +57,47 @@ def get_user(user_id: int):
         return {"ok": True, "data": user}
     except WorklogError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/logs")
+def list_logs(
+    project_id: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+):
+    try:
+        client = WorklogClient()
+        logs = client.get_logs(
+            project_id=project_id,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            offset=offset,
+        )
+        return {"ok": True, "data": logs}
+    except WorklogError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/logs/{log_id}")
+def get_log(log_id: int):
+    try:
+        client = WorklogClient()
+        log = client.get_log(log_id)
+        return {"ok": True, "data": log}
+    except WorklogError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/logs")
+def create_log(body: dict):
+    try:
+        client = WorklogClient()
+        log = client.create_log(body)
+        return {"ok": True, "data": log}
+    except WorklogError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+

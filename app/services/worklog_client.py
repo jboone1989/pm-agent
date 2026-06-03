@@ -67,15 +67,30 @@ class WorklogClient:
         self._request("DELETE", f"/tasks/{task_id}")
 
     def get_logs(
-        self, project_id: int, start_date: str, end_date: str
+        self,
+        project_id: Optional[int] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        limit: int = 200,
+        offset: int = 0,
     ) -> list[dict]:
-        return self._request(
-            "GET",
-            "/logs",
-            params={
-                "project_id": project_id,
-                "start_date": start_date,
-                "end_date": end_date,
-                "limit": 200,
-            },
-        ).get("data", [])
+        params: dict = {"limit": limit, "offset": offset}
+        if project_id is not None:
+            params["project_id"] = project_id
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        return self._request("GET", "/logs", params=params).get("data", [])
+
+    def get_log(self, log_id: int) -> dict:
+        return self._request("GET", f"/logs/{log_id}").get("data", {})
+
+    def create_log(self, data: dict) -> dict:
+        return self._request("POST", "/logs", json=data).get("data", {})
+
+    def update_log(self, log_id: int, data: dict) -> dict:
+        return self._request("PUT", f"/logs/{log_id}", json=data).get("data", {})
+
+    def delete_log(self, log_id: int) -> None:
+        self._request("DELETE", f"/logs/{log_id}")
