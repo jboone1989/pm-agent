@@ -982,7 +982,6 @@ function renderWeeklyView() {
     }
   }
 }
-}
 
 async function loadWeeklyLog(weekKey = null) {
   const url = weekKey ? `/api/weekly-log?week=${encodeURIComponent(weekKey)}` : "/api/weekly-log";
