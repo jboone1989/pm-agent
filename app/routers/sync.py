@@ -19,6 +19,15 @@ def pull_projects(session: Session = Depends(get_session)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/pull-all-logs")
+def pull_all_logs(days: int = 7, session: Session = Depends(get_session)):
+    try:
+        result = sync_service.pull_all_logs(session, days)
+        return {"ok": True, **result}
+    except WorklogError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/push-tasks/{project_item_id}")
 def push_tasks(project_item_id: int, session: Session = Depends(get_session)):
     try:

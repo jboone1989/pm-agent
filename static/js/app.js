@@ -1882,6 +1882,22 @@ async function pullLogs(projectId) {
 
 document.getElementById("pullProjectsBtn").addEventListener("click", pullProjects);
 
+document.getElementById("pullLogsBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("pullLogsBtn");
+  btn.disabled = true;
+  btn.textContent = "同步中...";
+  try {
+    const result = await fetchJson("/api/sync/pull-all-logs?days=7", { method: "POST" });
+    showAppToast(`日志拉取完成: ${result.synced}/${result.total_logs} 条 (${result.projects} 个项目)`);
+    await loadData();
+  } catch (e) {
+    showAppToast(`拉取日志失败: ${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "拉取日志";
+  }
+});
+
 document.getElementById("refreshBtn").addEventListener("click", async () => {
   await loadData();
   if (state.currentView === "weekly") {

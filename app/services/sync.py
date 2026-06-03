@@ -133,6 +133,24 @@ def pull_logs(session: Session, project_item_id: int, days: int = 7) -> dict:
     }
 
 
+def pull_all_logs(session: Session, days: int = 7) -> dict:
+    projects = session.exec(
+        select(WorkItem).where(
+            WorkItem.remote_id.is_not(None), WorkItem.parent_id.is_(None)
+        )
+    ).all()
+    total_synced = 0
+    total_logs = 0
+    for project in projects:
+        try:
+            result = pull_logs(session, project.id, days)
+            total_synced += result["synced"]
+            total_logs += result["total_logs"]
+        except WorklogError:
+            pass
+    return {"synced": total_synced, "total_logs": total_logs, "projects": len(projects)}
+
+
 STATUS_MAP = {
     WorkItemStatus.todo: "planned",
     WorkItemStatus.in_progress: "in_progress",
