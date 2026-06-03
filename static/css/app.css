@@ -1489,7 +1489,7 @@ body {
   padding: 12px 14px;
   overflow-y: auto;
   flex: 1;
-  max-height: 400px;
+  max-height: 200px;
 }
 
 .weekly-card-section {
@@ -1514,6 +1514,10 @@ body {
   line-height: 1.55;
   color: var(--text);
   white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .weekly-section {
@@ -1560,7 +1564,7 @@ body {
   padding: 8px 14px;
   overflow-y: auto;
   flex: 1;
-  max-height: 300px;
+  max-height: 200px;
 }
 
 .weekly-log-mini {
@@ -1943,7 +1947,7 @@ body.is-dragging .drop-zone {
 
   .chat-panel {
     width: 100%;
-    max-height: 300px;
+    max-height: 200px;
   }
 
   .chat-panel.collapsed {
