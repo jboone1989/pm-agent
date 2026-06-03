@@ -127,9 +127,7 @@ def pull_logs(session: Session, project_item_id: int, days: int = 7) -> dict:
         project.remote_id, start_date.isoformat(), end_date.isoformat()
     )
 
-    children = session.exec(
-        select(WorkItem).where(WorkItem.parent_id == project_item_id)
-    ).all()
+    children = _collect_descendants(session, project_item_id)
     name_map = {c.title: c for c in children}
 
     synced = 0
@@ -239,9 +237,7 @@ def pull_all_logs(session: Session, days: int = 7) -> dict:
         except WorklogError:
             continue
 
-        children = session.exec(
-            select(WorkItem).where(WorkItem.parent_id == project.id)
-        ).all()
+        children = _collect_descendants(session, project.id)
         name_map = {c.title: c for c in children}
 
         for log_entry in logs:
@@ -265,6 +261,12 @@ def pull_all_logs(session: Session, days: int = 7) -> dict:
                         source=ActivitySource.worklog,
                     )
                 )
+                new_progress = _infer_progress(content, matched.progress or 0)
+                if new_progress != matched.progress:
+                    matched.progress = new_progress
+                    from app.services.work_items import normalize_progress
+                    normalize_progress(matched)
+                    session.add(matched)
                 total_synced += 1
 
             entries.append({
