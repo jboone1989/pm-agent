@@ -1412,18 +1412,39 @@ async function openTimelineModal(itemId, pushToStack = true) {
   const headerActions = document.querySelector(".timeline-modal-header-actions");
   const syncBtns = headerActions?.querySelectorAll(".sync-btn");
   syncBtns?.forEach((b) => b.remove());
-  if (headerActions && item.remote_id && !item.parent_id) {
-    const pushBtn = document.createElement("button");
-    pushBtn.className = "btn primary sm sync-btn";
-    pushBtn.textContent = "推送到 Worklog";
-    pushBtn.addEventListener("click", () => pushTasks(item.id));
-    headerActions.insertBefore(pushBtn, headerActions.firstChild);
+  if (headerActions) {
+    if (item.remote_id && !item.parent_id) {
+      // Project: batch push + pull logs
+      const pushBtn = document.createElement("button");
+      pushBtn.className = "btn primary sm sync-btn";
+      pushBtn.textContent = "推送全部任务";
+      pushBtn.addEventListener("click", () => pushTasks(item.id));
+      headerActions.insertBefore(pushBtn, headerActions.firstChild);
 
-    const logsBtn = document.createElement("button");
-    logsBtn.className = "btn secondary sm sync-btn";
-    logsBtn.textContent = "拉取日志";
-    logsBtn.addEventListener("click", () => pullLogs(item.id));
-    headerActions.insertBefore(logsBtn, headerActions.firstChild);
+      const logsBtn = document.createElement("button");
+      logsBtn.className = "btn secondary sm sync-btn";
+      logsBtn.textContent = "拉取日志";
+      logsBtn.addEventListener("click", () => pullLogs(item.id));
+      headerActions.insertBefore(logsBtn, headerActions.firstChild);
+    } else if (item.parent_id) {
+      // Check if parent is a Worklog project
+      const parent = findItemInTree(state.items, item.parent_id);
+      if (parent?.remote_id) {
+        const pushOneBtn = document.createElement("button");
+        pushOneBtn.className = "btn primary sm sync-btn";
+        pushOneBtn.textContent = "推送此任务";
+        pushOneBtn.addEventListener("click", async () => {
+          try {
+            const r = await fetchJson(`/api/sync/push-task/${item.id}`, { method: "POST" });
+            showAppToast(`推送成功: ${r.action === "created" ? "新建" : "更新"} #${r.remote_id}`);
+            await loadData();
+          } catch (e) {
+            showAppToast(`推送失败: ${e.message}`, "error");
+          }
+        });
+        headerActions.insertBefore(pushOneBtn, headerActions.firstChild);
+      }
+    }
   }
 }
 

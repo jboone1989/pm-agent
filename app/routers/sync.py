@@ -110,3 +110,20 @@ def create_log(body: dict):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/projects/{project_id}/tasks")
+def create_worklog_task(project_id: int, body: dict):
+    try:
+        client = WorklogClient()
+        task = client.create_task(project_id, body)
+        return {"ok": True, "data": task}
+    except WorklogError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/push-task/{item_id}")
+def push_single_task(item_id: int, session: Session = Depends(get_session)):
+    try:
+        result = sync_service.push_single_task(session, item_id)
+        return {"ok": True, **result}
+    except WorklogError as e:
+        raise HTTPException(status_code=400, detail=str(e))
