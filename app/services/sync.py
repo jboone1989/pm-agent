@@ -151,20 +151,27 @@ def push_single_task(session: Session, item_id: int) -> dict:
         "progress": item.progress or 0,
         "priority": item.priority.value if item.priority else "medium",
     }
-    if item.assignee:
-        payload["assignee_id"] = _resolve_assignee_id(client, item.assignee)
 
     if item.remote_id:
-        client.update_task(item.remote_id, payload)
-        return {"action": "updated", "remote_id": item.remote_id}
-    else:
-        result = client.create_task(parent.remote_id, payload)
-        if result and result.get("id"):
-            item.remote_id = result["id"]
+        try:
+            client.update_task(item.remote_id, payload)
+            return {"action": "updated", "remote_id": item.remote_id}
+        except WorklogError:
+            item.remote_id = None
             session.add(item)
             session.commit()
-            return {"action": "created", "remote_id": result["id"]}
-        raise WorklogError("创建失败，未返回ID")
+
+    try:
+        result = client.create_task(parent.remote_id, payload)
+    except WorklogError as e:
+        raise WorklogError(f"创建到项目#{parent.remote_id}失败: {e}")
+
+    if result and result.get("id"):
+        item.remote_id = result["id"]
+        session.add(item)
+        session.commit()
+        return {"action": "created", "remote_id": result["id"]}
+    raise WorklogError("创建失败，未返回ID")
 
 
 def pull_all_logs(session: Session, days: int = 7) -> dict:
