@@ -235,6 +235,8 @@ def _normalize_create_arguments(
 
     if re.search(r"今天|今日", message):
         args["due_date"] = today.isoformat()
+    elif re.search(r"明天|明日", message):
+        args["due_date"] = (today + timedelta(days=1)).isoformat()
 
     parent_id = _infer_parent_id(session, args, message)
     if parent_id:

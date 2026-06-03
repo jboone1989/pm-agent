@@ -876,6 +876,43 @@ function renderFollowUpView() {
   `;
 }
 
+function getTomorrowItems() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  return flattenWorkItems(state.items)
+    .filter((item) => item.due_date === tomorrowStr && item.status !== "done" && item.status !== "cancelled")
+    .sort((a, b) => (b.priority === "urgent" ? 1 : 0) - (a.priority === "urgent" ? 1 : 0) || a.id - b.id);
+}
+
+function renderTomorrowView() {
+  const items = getTomorrowItems();
+  const tomorrowLabel = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+  if (!items.length) {
+    viewContent.innerHTML = `
+      <section class="followup-section">
+        <div class="followup-header">
+          <h3>明日计划 · ${escapeHtml(tomorrowLabel)}</h3>
+          <p>截止日期为明天的未完成任务会出现在这里。跟 Agent 说「明天要做xxx」即可自动安排。</p>
+        </div>
+        <div class="empty" style="padding:24px;text-align:center">暂无明日计划</div>
+      </section>`;
+    return;
+  }
+
+  viewContent.innerHTML = `
+    <section class="followup-section">
+      <div class="followup-header">
+        <h3>明日计划 · ${escapeHtml(tomorrowLabel)}</h3>
+        <p>共 ${items.length} 项，到期日自动转入今日跟进</p>
+      </div>
+      ${renderTableHead()}
+      ${items.map((item) => `<div class="tree-node">${renderCompactRow(item)}</div>`).join("")}
+    </section>
+  `;
+}
+
 function renderListView() {
   if (!state.items.length) {
     viewContent.innerHTML = `<div class="empty">还没有工作项。点击右上角「Agent 对话」创建工作，或让 Agent 帮你整理。</div>`;
@@ -1144,6 +1181,7 @@ function renderProjectView() {
 
 function renderCurrentView() {
   if (state.currentView === "followup") renderFollowUpView();
+  if (state.currentView === "tomorrow") renderTomorrowView();
   if (state.currentView === "list") renderListView();
   if (state.currentView === "person") renderPersonView();
   if (state.currentView === "project") renderProjectView();
