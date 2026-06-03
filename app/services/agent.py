@@ -337,7 +337,7 @@ def run_agent(session: Session, message: str, history: list[dict] | None = None)
     messages = [{"role": "system", "content": system_prompt}]
     if history:
         # Keep only last 20 turns to avoid context overflow
-        messages.extend(history[-40:])
+        messages.extend(history[-20:])
     messages.append({"role": "user", "content": message})
     actions = []
     changed_ids = []
@@ -374,7 +374,7 @@ def run_agent_stream(session: Session, message: str, history: list[dict] | None 
     system_prompt = _build_system_prompt(session, message)
     messages = [{"role": "system", "content": system_prompt}]
     if history:
-        messages.extend(history[-40:])
+        messages.extend(history[-20:])
     messages.append({"role": "user", "content": message})
     all_changed_ids = []
     all_actions = []
@@ -401,7 +401,7 @@ def run_agent_stream(session: Session, message: str, history: list[dict] | None 
             if delta.content:
                 content_parts.append(delta.content)
                 text_buf += delta.content
-                if len(text_buf) >= 30 or any(text_buf.endswith(c) for c in ("。", "！", "？")):
+                if len(text_buf) >= 8 or any(text_buf.endswith(c) for c in ("。", "！", "？", "，", "\n")):
                     yield _sse("text", {"text": text_buf})
                     text_buf = ""
 
