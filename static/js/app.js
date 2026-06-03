@@ -7,7 +7,7 @@ const state = {
   chatOpen: false,
   weeklyWeekKey: null,
   weeklyLog: null,
-  collapsedItemIds: new Set(),
+  expandedItemIds: new Set(),
 };
 
 const dragState = { itemId: null, itemTitle: null };
@@ -477,14 +477,14 @@ async function moveWorkItem(itemId, newParentId) {
 }
 
 function isItemCollapsed(itemId) {
-  return state.collapsedItemIds.has(itemId);
+  return !state.expandedItemIds.has(itemId);
 }
 
 function toggleItemCollapsed(itemId) {
-  if (state.collapsedItemIds.has(itemId)) {
-    state.collapsedItemIds.delete(itemId);
+  if (state.expandedItemIds.has(itemId)) {
+    state.expandedItemIds.delete(itemId);
   } else {
-    state.collapsedItemIds.add(itemId);
+    state.expandedItemIds.add(itemId);
   }
   renderCurrentView();
 }
