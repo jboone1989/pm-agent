@@ -987,11 +987,18 @@ function renderWeeklyView() {
   document.getElementById("generateWeeklyBtn").addEventListener("click", generateWeeklyReport);
 
   // Click to show detail modal
-  viewContent.querySelectorAll(".weekly-report-card, .weekly-log-card").forEach((card) => {
+  viewContent.querySelectorAll(".weekly-report-card").forEach((card) => {
     card.style.cursor = "pointer";
     card.addEventListener("click", () => {
       const idx = Number(card.dataset.weekIdx);
-      showWeekDetailModal(weeks[idx]);
+      showReportDetailModal(weeks[idx]);
+    });
+  });
+  viewContent.querySelectorAll(".weekly-log-card").forEach((card) => {
+    card.style.cursor = "pointer";
+    card.addEventListener("click", () => {
+      const idx = Number(card.dataset.weekIdx);
+      showLogDetailModal(weeks[idx]);
     });
   });
 
@@ -1015,14 +1022,14 @@ function renderWeeklyView() {
   }
 }
 
-function showWeekDetailModal(w) {
+function showReportDetailModal(w) {
   const report = w.report;
   const html = `
-    <div class="app-modal" id="weekDetailModal">
+    <div class="app-modal" id="reportDetailModal">
       <div class="app-modal-card" style="width:min(600px,100%);max-height:80vh">
         <div class="app-modal-header">
-          <h4>${escapeHtml(w.week_label)}  ·  ${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</h4>
-          <button type="button" class="btn secondary sm" id="closeWeekDetailModal">关闭</button>
+          <h4>📋 ${escapeHtml(w.week_label)}  ·  ${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</h4>
+          <button type="button" class="btn secondary sm" id="closeReportDetailModal">关闭</button>
         </div>
         <div style="overflow-y:auto;max-height:55vh">
           <div class="weekly-section">
@@ -1034,30 +1041,43 @@ function showWeekDetailModal(w) {
             <h3>下周计划</h3>
             <div class="report-box">${escapeHtml(report.next_week_plan)}</div>
           </div>` : ""}
-          <div class="weekly-section">
-            <h3>操作记录（${w.entries.length} 条）</h3>
-            ${w.entries.length
-              ? `<div class="report-box" style="padding:0">${w.entries.map((e) => `
-                <div class="log-entry">
-                  <span class="log-time">${escapeHtml(formatLogTime(e.created_at))}</span>
-                  <span class="log-action">${escapeHtml(ACTION_LABELS[e.action] || e.action)}</span>
-                  <span class="log-message">${escapeHtml(e.message)}</span>
-                </div>`).join("")}</div>`
-              : `<div class="empty">本周没有操作记录</div>`
-            }
-          </div>
         </div>
       </div>
     </div>`;
+  _showModal("reportDetailModal", html, "closeReportDetailModal");
+}
 
+function showLogDetailModal(w) {
+  const html = `
+    <div class="app-modal" id="logDetailModal">
+      <div class="app-modal-card" style="width:min(600px,100%);max-height:80vh">
+        <div class="app-modal-header">
+          <h4>📝 ${escapeHtml(w.week_label)}  ·  ${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</h4>
+          <button type="button" class="btn secondary sm" id="closeLogDetailModal">关闭</button>
+        </div>
+        <div style="overflow-y:auto;max-height:55vh">
+          ${w.entries.length
+            ? `<div class="report-box" style="padding:0">${w.entries.map((e) => `
+              <div class="log-entry">
+                <span class="log-time">${escapeHtml(formatLogTime(e.created_at))}</span>
+                <span class="log-action">${escapeHtml(ACTION_LABELS[e.action] || e.action)}</span>
+                <span class="log-message">${escapeHtml(e.message)}</span>
+              </div>`).join("")}</div>`
+            : `<div class="empty">本周没有操作记录</div>`
+          }
+        </div>
+      </div>
+    </div>`;
+  _showModal("logDetailModal", html, "closeLogDetailModal");
+}
+
+function _showModal(id, html, closeBtnId) {
+  document.getElementById(id)?.remove();
   document.body.insertAdjacentHTML("beforeend", html);
-  const close = () => {
-    const m = document.getElementById("weekDetailModal");
-    if (m) m.remove();
-  };
-  document.getElementById("closeWeekDetailModal").addEventListener("click", close);
-  document.getElementById("weekDetailModal").addEventListener("click", (e) => {
-    if (e.target.id === "weekDetailModal") close();
+  const close = () => document.getElementById(id)?.remove();
+  document.getElementById(closeBtnId).addEventListener("click", close);
+  document.getElementById(id).addEventListener("click", (e) => {
+    if (e.target.id === id) close();
   });
 }
 
