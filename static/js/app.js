@@ -1340,6 +1340,24 @@ async function openTimelineModal(itemId, pushToStack = true) {
   timelineQuickInput.value = "";
   timelineModal.classList.remove("hidden");
   timelineQuickInput.focus();
+
+  // Add sync buttons for Worklog-linked projects
+  const headerActions = document.querySelector(".timeline-modal-header-actions");
+  const syncBtns = headerActions?.querySelectorAll(".sync-btn");
+  syncBtns?.forEach((b) => b.remove());
+  if (headerActions && item.remote_id && !item.parent_id) {
+    const pushBtn = document.createElement("button");
+    pushBtn.className = "btn primary sm sync-btn";
+    pushBtn.textContent = "推送到 Worklog";
+    pushBtn.addEventListener("click", () => pushTasks(item.id));
+    headerActions.insertBefore(pushBtn, headerActions.firstChild);
+
+    const logsBtn = document.createElement("button");
+    logsBtn.className = "btn secondary sm sync-btn";
+    logsBtn.textContent = "拉取日志";
+    logsBtn.addEventListener("click", () => pullLogs(item.id));
+    headerActions.insertBefore(logsBtn, headerActions.firstChild);
+  }
 }
 
 function showTimelineDetail(event, clickedEl) {
@@ -1757,6 +1775,45 @@ document.querySelectorAll(".tab").forEach((tab) => {
     renderCurrentView();
   });
 });
+
+async function pullProjects() {
+  const btn = document.getElementById("pullProjectsBtn");
+  const status = document.getElementById("syncStatus");
+  btn.disabled = true;
+  status.textContent = "同步中...";
+  try {
+    const result = await fetchJson("/api/sync/pull-projects", { method: "POST" });
+    status.textContent = `已同步: 新建 ${result.created}, 更新 ${result.updated}`;
+    await loadData();
+  } catch (e) {
+    status.textContent = `失败: ${e.message}`;
+    showAppToast(`拉取项目失败: ${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function pushTasks(projectId) {
+  try {
+    const result = await fetchJson(`/api/sync/push-tasks/${projectId}`, { method: "POST" });
+    showAppToast(`推送完成: 新建 ${result.created}, 更新 ${result.updated}`);
+    await loadData();
+  } catch (e) {
+    showAppToast(`推送失败: ${e.message}`, "error");
+  }
+}
+
+async function pullLogs(projectId) {
+  try {
+    const result = await fetchJson(`/api/sync/pull-logs/${projectId}?days=7`, { method: "POST" });
+    showAppToast(`拉取日志: ${result.synced}/${result.total_logs} 条 (${result.start} ~ ${result.end})`);
+    await loadData();
+  } catch (e) {
+    showAppToast(`拉取日志失败: ${e.message}`, "error");
+  }
+}
+
+document.getElementById("pullProjectsBtn").addEventListener("click", pullProjects);
 
 document.getElementById("refreshBtn").addEventListener("click", async () => {
   await loadData();
