@@ -977,10 +977,15 @@ body {
 
 .subtask-dot {
   display: inline-block;
-  color: var(--primary);
-  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #fef3c7;
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 500;
   cursor: default;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .subtask-modal {

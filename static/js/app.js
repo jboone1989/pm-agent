@@ -788,7 +788,7 @@ function renderSubtaskList(children, activityMap = {}) {
       (child) => {
         const lastAct = activityMap[child.id];
         const actBadge = lastAct
-          ? `<span class="subtask-dot" title="${escapeHtml(lastAct)}">●</span>`
+          ? `<span class="subtask-dot" title="${escapeHtml(lastAct)}">🆕 有更新</span>`
           : "";
         const progress = clampProgress(child.progress ?? 0);
         return `
