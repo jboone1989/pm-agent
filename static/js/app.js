@@ -1888,7 +1888,7 @@ document.getElementById("pullLogsBtn").addEventListener("click", async () => {
   btn.textContent = "同步中...";
   try {
     const result = await fetchJson("/api/sync/pull-all-logs?days=7", { method: "POST" });
-    showAppToast(`日志拉取完成: ${result.synced}/${result.total_logs} 条 (${result.projects} 个项目)`);
+    showLogsModal(result);
     await loadData();
   } catch (e) {
     showAppToast(`拉取日志失败: ${e.message}`, "error");
@@ -1897,6 +1897,54 @@ document.getElementById("pullLogsBtn").addEventListener("click", async () => {
     btn.textContent = "拉取日志";
   }
 });
+
+function showLogsModal(result) {
+  const existing = document.getElementById("logsModal");
+  if (existing) existing.remove();
+
+  const entries = result.entries || [];
+  const matchedCount = entries.filter((e) => e.matched).length;
+
+  const html = `
+    <div class="app-modal" id="logsModal">
+      <div class="app-modal-card" style="width:min(640px,100%);max-height:80vh">
+        <div class="app-modal-header">
+          <h4>Worklog 日志 (${matchedCount}/${entries.length} 条已关联)</h4>
+          <button type="button" class="btn secondary sm" id="closeLogsModal">关闭</button>
+        </div>
+        <div style="overflow-y:auto;max-height:60vh">
+          ${entries.length === 0
+            ? '<div class="empty" style="padding:20px;text-align:center">暂无日志</div>'
+            : `<table class="logs-table">
+              <thead><tr><th>日期</th><th>项目</th><th>任务</th><th>人员</th><th>内容</th><th>关联</th></tr></thead>
+              <tbody>${entries
+                .map(
+                  (e) => `
+                <tr class="${e.matched ? "" : "logs-row-unmatched"}">
+                  <td>${escapeHtml(e.log_date)}</td>
+                  <td>${escapeHtml(e.project_name)}</td>
+                  <td>${escapeHtml(e.task_name || "-")}</td>
+                  <td>${escapeHtml(e.username)}</td>
+                  <td>${escapeHtml(e.content)}</td>
+                  <td>${e.matched ? "✅" : "❌"}</td>
+                </tr>`
+                )
+                .join("")}
+              </tbody>
+            </table>`
+          }
+        </div>
+      </div>
+    </div>`;
+
+  document.body.insertAdjacentHTML("beforeend", html);
+  document.getElementById("closeLogsModal").addEventListener("click", () => {
+    document.getElementById("logsModal").remove();
+  });
+  document.getElementById("logsModal").addEventListener("click", (e) => {
+    if (e.target.id === "logsModal") document.getElementById("logsModal").remove();
+  });
+}
 
 document.getElementById("refreshBtn").addEventListener("click", async () => {
   await loadData();

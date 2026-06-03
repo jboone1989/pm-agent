@@ -139,16 +139,66 @@ def pull_all_logs(session: Session, days: int = 7) -> dict:
             WorkItem.remote_id.is_not(None), WorkItem.parent_id.is_(None)
         )
     ).all()
+
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days)
+    client = WorklogClient()
+
+    entries = []
     total_synced = 0
-    total_logs = 0
+
     for project in projects:
         try:
-            result = pull_logs(session, project.id, days)
-            total_synced += result["synced"]
-            total_logs += result["total_logs"]
+            logs = client.get_logs(
+                project.remote_id, start_date.isoformat(), end_date.isoformat()
+            )
         except WorklogError:
-            pass
-    return {"synced": total_synced, "total_logs": total_logs, "projects": len(projects)}
+            continue
+
+        children = session.exec(
+            select(WorkItem).where(WorkItem.parent_id == project.id)
+        ).all()
+        name_map = {c.title: c for c in children}
+
+        for log_entry in logs:
+            task_name = log_entry.get("project_name") or ""
+            content = log_entry.get("content", "")
+            log_date = log_entry.get("log_date", "")
+            username = log_entry.get("display_name") or log_entry.get("username", "")
+
+            matched = name_map.get(task_name)
+            if not matched:
+                for child in children:
+                    if child.title in task_name or task_name in child.title:
+                        matched = child
+                        break
+
+            if matched:
+                session.add(
+                    ActivityLog(
+                        work_item_id=matched.id,
+                        content=f"[Worklog {log_date}] {content}",
+                        source=ActivitySource.worklog,
+                    )
+                )
+                total_synced += 1
+
+            entries.append({
+                "project_name": project.title,
+                "task_name": task_name,
+                "content": content,
+                "log_date": log_date,
+                "username": username,
+                "matched": matched is not None,
+            })
+
+    session.commit()
+    return {
+        "synced": total_synced,
+        "total_logs": len(entries),
+        "projects": len(projects),
+        "entries": entries,
+    }
 
 
 STATUS_MAP = {

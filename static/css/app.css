@@ -1672,6 +1672,31 @@ body.is-dragging .drop-zone {
   outline: none;
 }
 
+.logs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.logs-table th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--border);
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.logs-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.logs-row-unmatched {
+  opacity: 0.45;
+}
+
 .mb-12 {
   margin-bottom: 12px;
 }
