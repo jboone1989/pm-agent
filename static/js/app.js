@@ -1566,7 +1566,7 @@ async function openTimelineModal(itemId, pushToStack = true) {
         pushOneBtn.addEventListener("click", async () => {
           try {
             const r = await fetchJson(`/api/sync/push-task/${item.id}`, { method: "POST" });
-            showAppToast(`推送成功: ${r.action === "created" ? "新建" : "更新"} #${r.remote_id}`);
+            showAppToast(`推送 ${r.total} 个任务: 更新 ${r.updated}, 新建 ${r.created}`);
             await loadData();
           } catch (e) {
             showAppToast(`推送失败: ${e.message}`, "error");
