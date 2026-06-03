@@ -17,6 +17,7 @@ class WorkItemCreate(BaseModel):
     due_date: Optional[date] = None
     priority: Priority = Priority.medium
     progress: int = 0
+    remote_id: Optional[int] = None
 
 
 class WorkItemUpdate(BaseModel):
@@ -30,6 +31,7 @@ class WorkItemUpdate(BaseModel):
     due_date: Optional[date] = None
     priority: Optional[Priority] = None
     progress: Optional[int] = None
+    remote_id: Optional[int] = None
 
     @field_validator("progress")
     @classmethod
@@ -51,6 +53,7 @@ class WorkItemRead(BaseModel):
     due_date: Optional[date]
     priority: Priority
     progress: int = 0
+    remote_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     children: list["WorkItemRead"] = Field(default_factory=list)

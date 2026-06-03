@@ -25,6 +25,8 @@ def migrate_db() -> None:
                     "WHERE status = 'in_progress' AND progress = 0"
                 )
             )
+        if "remote_id" not in columns:
+            conn.execute(text("ALTER TABLE workitem ADD COLUMN remote_id INTEGER"))
 
 
 def init_db() -> None:

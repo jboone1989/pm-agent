@@ -52,6 +52,7 @@ class WorkItem(SQLModel, table=True):
     due_date: Optional[date] = None
     priority: Priority = Priority.medium
     progress: int = Field(default=0, ge=0, le=100)
+    remote_id: Optional[int] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

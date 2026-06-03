@@ -29,3 +29,6 @@ def _normalize_base_url(url: str) -> str:
 
 
 LLM_API_BASE = _normalize_base_url(LLM_API_BASE)
+
+WORKLOG_API_KEY = os.getenv("WORKLOG_API_KEY", "")
+WORKLOG_API_BASE = os.getenv("WORKLOG_API_BASE", "https://k1.xaytzn.com/worklog/api/v1")
