@@ -10,3 +10,7 @@ pm_agent.db
 .next/
 node_modules/
 package-lock.json
+build/
+dist/
+*.spec
+.venv-build/

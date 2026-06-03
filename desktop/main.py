@@ -7,6 +7,7 @@ import urllib.request
 import uvicorn
 import webview
 
+import app.main  # force PyInstaller to bundle app package
 from desktop.tray import SystemTray
 
 PORT = 8000
