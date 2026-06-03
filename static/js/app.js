@@ -1837,7 +1837,11 @@ toggleChatBtn.addEventListener("click", () => {
   setChatOpen(!state.chatOpen);
 });
 
-chatInput.addEventListener("input", updateMentionMenuFromInput);
+chatInput.addEventListener("input", () => {
+  chatInput.style.height = "auto";
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + "px";
+  updateMentionMenuFromInput();
+});
 
 chatInput.addEventListener("keydown", (event) => {
   if (!mentionState.open || !mentionState.items.length) return;
@@ -1891,6 +1895,7 @@ chatForm.addEventListener("submit", async (event) => {
   setChatOpen(true);
   appendMessage("user", message);
   chatInput.value = "";
+  chatInput.style.height = "auto";
   chatInput.disabled = true;
 
   let fullReply = "";
