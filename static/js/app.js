@@ -1234,6 +1234,52 @@ editModalBody.addEventListener("click", async (event) => {
   }
 });
 
+function showSubtaskForm(parentId) {
+  const body = timelineModalBody;
+  const original = body.innerHTML;
+  const today = todayDateString();
+
+  body.innerHTML = `
+    <div class="subtask-create-form">
+      <h4 style="margin:0 0 8px">添加子任务</h4>
+      <label>名称</label>
+      <input id="newSubtaskTitle" placeholder="子任务名称" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;margin-bottom:8px" />
+      <label>负责人</label>
+      <input id="newSubtaskAssignee" list="assigneeOptions" placeholder="可选" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;margin-bottom:8px" />
+      <div style="display:flex;gap:8px">
+        <button type="button" class="btn primary sm" id="confirmSubtask">创建</button>
+        <button type="button" class="btn secondary sm" id="cancelSubtask">取消</button>
+      </div>
+    </div>
+  `;
+
+  const cancel = () => { body.innerHTML = original; };
+  body.querySelector("#cancelSubtask").addEventListener("click", cancel);
+
+  body.querySelector("#confirmSubtask").addEventListener("click", async () => {
+    const title = body.querySelector("#newSubtaskTitle").value.trim();
+    if (!title) return;
+    try {
+      await fetchJson("/api/work-items", {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          parent_id: parentId,
+          assignee: body.querySelector("#newSubtaskAssignee").value.trim() || null,
+          type: "planned",
+          status: "todo",
+        }),
+      });
+      await loadData();
+      await openTimelineModal(parentId, false);
+    } catch (error) {
+      showAppToast(`创建失败：${error.message}`, "error");
+    }
+  });
+
+  body.querySelector("#newSubtaskTitle").focus();
+}
+
 let timelineNavStack = [];
 
 async function openTimelineModal(itemId, pushToStack = true) {
@@ -1790,6 +1836,20 @@ document.getElementById("openDetailFromTimeline").addEventListener("click", asyn
   const itemId = Number(timelineModal.dataset.itemId);
   if (!itemId) return;
   await openEditModal(itemId);
+});
+
+document.getElementById("addSubtaskFromTimeline").addEventListener("click", () => {
+  const itemId = Number(timelineModal.dataset.itemId);
+  if (!itemId) return;
+  showSubtaskForm(itemId);
+});
+
+document.getElementById("deleteFromTimeline").addEventListener("click", async () => {
+  const itemId = Number(timelineModal.dataset.itemId);
+  if (!itemId) return;
+  const title = timelineModalTitle.textContent || "该任务";
+  await deleteWorkItem(itemId, title);
+  closeTimelineModal();
 });
 timelineModalBody.addEventListener("click", async (event) => {
   const tlItem = event.target.closest(".h-timeline-item");
