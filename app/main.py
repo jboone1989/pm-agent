@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -8,15 +9,20 @@ from fastapi.templating import Jinja2Templates
 from app.db import init_db
 from app.routers import chat, weekly_log, work_items
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+_IS_FROZEN = getattr(sys, "frozen", False)
+
+if _IS_FROZEN:
+    _RESOURCES = Path(sys._MEIPASS)
+else:
+    _RESOURCES = Path(__file__).resolve().parent.parent
 
 app = FastAPI(title="PM Agent", version="0.1.0")
 app.include_router(work_items.router)
 app.include_router(chat.router)
 app.include_router(weekly_log.router)
 
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
+app.mount("/static", StaticFiles(directory=_RESOURCES / "static"), name="static")
+templates = Jinja2Templates(directory=_RESOURCES / "templates")
 
 
 @app.on_event("startup")

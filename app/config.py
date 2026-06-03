@@ -1,11 +1,19 @@
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+_IS_FROZEN = getattr(sys, "frozen", False)
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+if _IS_FROZEN:
+    _EXE_DIR = Path(sys.executable).resolve().parent
+    load_dotenv(_EXE_DIR / ".env")
+else:
+    _EXE_DIR = Path(__file__).resolve().parent.parent
+    load_dotenv()
+
+BASE_DIR = _EXE_DIR
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'pm_agent.db'}")
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
