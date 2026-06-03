@@ -226,57 +226,57 @@ def pull_all_logs(session: Session, days: int = 7) -> dict:
     start_date = end_date - timedelta(days=days + 1)
     client = WorklogClient()
 
+    try:
+        logs = client.get_logs(start_date=start_date.isoformat(), end_date=end_date.isoformat())
+    except WorklogError as e:
+        raise WorklogError(f"拉取日志失败: {e}")
+
+    all_tasks: dict[str, WorkItem] = {}
+    for project in projects:
+        for child in _collect_descendants(session, project.id):
+            if child.title not in all_tasks:
+                all_tasks[child.title] = child
+
     entries = []
     total_synced = 0
 
-    for project in projects:
-        try:
-            logs = client.get_logs(
-                project.remote_id, start_date.isoformat(), end_date.isoformat()
-            )
-        except WorklogError:
-            continue
+    for log_entry in logs:
+        task_name = log_entry.get("project_name") or ""
+        content = log_entry.get("content", "")
+        log_date = log_entry.get("log_date", "")
+        username = log_entry.get("display_name") or log_entry.get("username", "")
 
-        children = _collect_descendants(session, project.id)
-        name_map = {c.title: c for c in children}
+        matched = all_tasks.get(task_name)
+        if not matched:
+            for name, child in all_tasks.items():
+                if child.title in task_name or task_name in child.title:
+                    matched = child
+                    break
 
-        for log_entry in logs:
-            task_name = log_entry.get("project_name") or ""
-            content = log_entry.get("content", "")
-            log_date = log_entry.get("log_date", "")
-            username = log_entry.get("display_name") or log_entry.get("username", "")
-
-            matched = name_map.get(task_name)
-            if not matched:
-                for child in children:
-                    if child.title in task_name or task_name in child.title:
-                        matched = child
-                        break
-
-            if matched:
-                session.add(
-                    ActivityLog(
-                        work_item_id=matched.id,
-                        content=f"[Worklog {log_date}] {content}",
-                        source=ActivitySource.worklog,
-                    )
+        if matched:
+            session.add(
+                ActivityLog(
+                    work_item_id=matched.id,
+                    content=f"[Worklog {log_date}] {content}",
+                    source=ActivitySource.worklog,
                 )
-                new_progress = _infer_progress(content, matched.progress or 0)
-                if new_progress != matched.progress:
-                    matched.progress = new_progress
-                    from app.services.work_items import normalize_progress
-                    normalize_progress(matched)
-                    session.add(matched)
-                total_synced += 1
+            )
+            new_progress = _infer_progress(content, matched.progress or 0)
+            if new_progress != matched.progress:
+                matched.progress = new_progress
+                from app.services.work_items import normalize_progress
+                normalize_progress(matched)
+                session.add(matched)
+            total_synced += 1
 
-            entries.append({
-                "project_name": project.title,
-                "task_name": task_name,
-                "content": content,
-                "log_date": log_date,
-                "username": username,
-                "matched": matched is not None,
-            })
+        entries.append({
+            "project_name": log_entry.get("project_name") or "",
+            "task_name": task_name,
+            "content": content,
+            "log_date": log_date,
+            "username": username,
+            "matched": matched is not None,
+        })
 
     session.commit()
     return {
