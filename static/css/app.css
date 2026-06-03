@@ -105,7 +105,7 @@ body {
 
 .chat-panel {
   flex-shrink: 0;
-  width: 400px;
+  width: 686px;
   transition: width 0.2s ease, opacity 0.15s ease;
 }
 
@@ -690,7 +690,7 @@ body {
   box-sizing: border-box;
   resize: none;
   min-height: 44px;
-  max-height: 200px;
+  max-height: 224px;
   padding: 10px;
   border-radius: var(--radius);
   border: 1px solid var(--border);

@@ -1839,7 +1839,7 @@ toggleChatBtn.addEventListener("click", () => {
 
 chatInput.addEventListener("input", () => {
   chatInput.style.height = "auto";
-  chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + "px";
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 224) + "px";
   updateMentionMenuFromInput();
 });
 
