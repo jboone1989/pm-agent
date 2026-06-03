@@ -14,7 +14,7 @@ from app.services import work_items as work_item_service
 
 TASK_REF_RE = re.compile(r"#(\d+)(?:「([^」]+)」)?")
 
-MAX_ROUNDS = 8
+MAX_ROUNDS = 5
 
 TOOLS = [
     {
@@ -161,21 +161,11 @@ def _build_system_prompt(session: Session, message: str) -> str:
         if ref_lines:
             ref_hint = "\n## 用户引用的任务\n" + "\n".join(ref_lines)
 
-    return f"""你是项目管理助手，用中文回复。
+    return f"""项目管理助手。中文回复，简洁直接。
 
-## 数据库概览
-共 {len(items)} 个任务，状态分布：{json.dumps(status_counts, ensure_ascii=False)}
-人员：{json.dumps(assignees, ensure_ascii=False)}
-今天：{today}
-
-## 顶层项目
-{json.dumps(projects, ensure_ascii=False)}
+今天={today}。任务总数{len(items)}。顶层项目：{json.dumps(projects, ensure_ascii=False)}。人员：{assignees}。
 {ref_hint}
-## 工具说明
-- 需要查任务详情时用 search_work_items，不要猜
-- planned=计划任务，ad_hoc=临时任务
-- 日期 YYYY-MM-DD，年份 {today[:4]}
-- progress=100 自动标记完成
+规则：创建时父级默认放引用项目下。搜索用search。ad_hoc=临时。"""
 - 创建子任务设置 parent_id"""
 
 
