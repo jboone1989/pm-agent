@@ -1837,6 +1837,15 @@ body.is-dragging .drop-zone {
   padding: 14px 18px;
 }
 
+.timeline-parent-link {
+  cursor: pointer;
+  color: var(--primary);
+}
+
+.timeline-parent-link:hover {
+  text-decoration: underline;
+}
+
 .timeline-meta-bar {
   display: flex;
   flex-wrap: wrap;

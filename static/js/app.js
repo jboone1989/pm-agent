@@ -1506,6 +1506,14 @@ async function openTimelineModal(itemId, pushToStack = true) {
   const backBtn = timelineNavStack.length
     ? `<button type="button" class="btn-timeline-back" id="timelineBackBtn" title="返回上级任务">← 返回</button>`
     : "";
+  let parentLink = "";
+  if (item.parent_id) {
+    const parentItem = findItemInTree(state.items, item.parent_id);
+    if (parentItem) {
+      parentLink = `<span class="timeline-parent-link" data-parent-id="${parentItem.id}">📂 ${escapeHtml(parentItem.title)}</span>`;
+    }
+  }
+
   timelineModalTitle.innerHTML = `${backBtn}${escapeHtml(item.title)}`;
   timelineModalBody.innerHTML = `
     <div class="timeline-meta-bar">
@@ -1513,6 +1521,7 @@ async function openTimelineModal(itemId, pushToStack = true) {
       <span>进度 ${clampProgress(item.progress ?? 0)}%</span>
       <span>${escapeHtml(item.assignee || "未分配")}</span>
       ${children.length ? `<span>${children.length} 个子任务</span>` : ""}
+      ${parentLink}
     </div>
     ${children.length ? `<div class="mb-12">${renderSubtaskList(children, childActivity)}</div>` : ""}
     ${
@@ -2244,6 +2253,13 @@ timelineModalBody.addEventListener("click", async (event) => {
     event.preventDefault();
     const itemId = Number(link.dataset.openItemId);
     if (itemId) await openTimelineModal(itemId);
+  }
+
+  const parentLink = event.target.closest("[data-parent-id]");
+  if (parentLink) {
+    event.preventDefault();
+    const parentId = Number(parentLink.dataset.parentId);
+    if (parentId) await openTimelineModal(parentId);
   }
 
   const delBtn = event.target.closest("[data-delete-activity-id]");
