@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.db import init_db
-from app.routers import chat, weekly_log, work_items
+from app.routers import chat, sync, weekly_log, work_items
 
 _IS_FROZEN = getattr(sys, "frozen", False)
 
@@ -19,6 +19,7 @@ else:
 app = FastAPI(title="PM Agent", version="0.1.0")
 app.include_router(work_items.router)
 app.include_router(chat.router)
+app.include_router(sync.router)
 app.include_router(weekly_log.router)
 
 app.mount("/static", StaticFiles(directory=_RESOURCES / "static"), name="static")
