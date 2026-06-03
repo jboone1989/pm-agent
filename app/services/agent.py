@@ -21,7 +21,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_work_item",
-            "description": "创建新任务/子任务/项目。用户汇报新事项必须用此工具",
+            "description": "创建新任务/子任务/项目（不用于会议/日程/提醒等临时安排）",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -100,7 +100,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "add_daily_note",
-            "description": "添加临时备忘/日程安排（会议、提醒等），不记入任务列表。日期格式YYYY-MM-DD",
+            "description": "添加会议/日程/提醒等临时备忘，不记入任务列表。优先于create_work_item。日期格式YYYY-MM-DD",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -180,7 +180,7 @@ def _build_system_prompt(session: Session, message: str) -> str:
 
 今天={today}。任务总数{len(items)}。顶层项目：{json.dumps(projects, ensure_ascii=False)}。人员：{assignees}。
 {ref_hint}
-规则：用户汇报新事项必须create子任务。临时安排/会议/提醒用add_daily_note不建任务。分配人员调update设置assignee。只汇报实际调用了工具的操作，不得虚构。ad_hoc=临时。"""
+规则：用户汇报新需求/新问题必须create。会议/日程/提醒等临时安排只用add_daily_note，禁止create。分配人员调update。只汇报实际调用了工具的操作。ad_hoc=临时。"""
 
 
 def _serialize_item(item) -> dict[str, Any]:
