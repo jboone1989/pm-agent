@@ -165,7 +165,7 @@ def _build_system_prompt(session: Session, message: str) -> str:
 
 今天={today}。任务总数{len(items)}。顶层项目：{json.dumps(projects, ensure_ascii=False)}。人员：{assignees}。
 {ref_hint}
-规则：用户汇报新事项/新问题/新需求时必须create子任务放到引用项目下，不要只add_activity。仅进展更新或随口备注才用add_activity。ad_hoc=临时。"""
+规则：用户汇报新事项必须create子任务。分配人员必须调update设置assignee。只汇报你实际调用了工具的操作，不得虚构未执行的动作。ad_hoc=临时。"""
 
 
 def _serialize_item(item) -> dict[str, Any]:
