@@ -126,3 +126,8 @@ def delete_activity(item_id: int, activity_id: int, session: Session = Depends(g
 @router.get("/{item_id}/timeline", response_model=list[TimelineItem])
 def get_timeline(item_id: int, session: Session = Depends(get_session)):
     return work_item_service.get_timeline(session, item_id)
+
+
+@router.get("/{item_id}/children-activity")
+def children_last_activity(item_id: int, session: Session = Depends(get_session)):
+    return work_item_service.get_children_last_activity(session, item_id)

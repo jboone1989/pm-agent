@@ -219,3 +219,20 @@ def get_timeline(session: Session, item_id: int) -> list[TimelineItem]:
         ))
 
     return events
+
+
+def get_children_last_activity(session: Session, parent_id: int) -> dict[int, str]:
+    children = session.exec(
+        select(WorkItem.id).where(WorkItem.parent_id == parent_id)
+    ).all()
+    result = {}
+    for (child_id,) in children:
+        last_log = session.exec(
+            select(ActivityLog)
+            .where(ActivityLog.work_item_id == child_id)
+            .order_by(ActivityLog.created_at.desc())
+            .limit(1)
+        ).first()
+        if last_log:
+            result[child_id] = last_log.content
+    return result

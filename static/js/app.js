@@ -779,21 +779,33 @@ function findItemInTree(items, itemId) {
   return null;
 }
 
-function renderSubtaskList(children) {
+function renderSubtaskList(children, activityMap = {}) {
   if (!children?.length) {
     return `<div class="empty" style="padding:12px">暂无子任务，可在下方添加。</div>`;
   }
   return `<ul class="subtask-list">${children
     .map(
-      (child) => `
+      (child) => {
+        const lastAct = activityMap[child.id];
+        const badge = lastAct
+          ? `<span class="subtask-badge" title="${escapeHtml(lastAct)}">${escapeHtml(truncateActivity(lastAct))}</span>`
+          : "";
+        return `
         <li>
           <a href="#" class="subtask-link" data-open-item-id="${child.id}">
             ${escapeHtml(child.title)} · ${clampProgress(child.progress ?? 0)}% · ${escapeHtml(STATUS_LABELS[child.status] || child.status)}
           </a>
+          ${badge}
         </li>
-      `
+      `;
+      }
     )
     .join("")}</ul>`;
+}
+
+function truncateActivity(text) {
+  if (!text) return "";
+  return text.length > 20 ? text.slice(0, 20) + "…" : text;
 }
 
 async function deleteWorkItem(itemId, title) {
@@ -1290,6 +1302,13 @@ async function openTimelineModal(itemId, pushToStack = true) {
   const treeItem = findItemInTree(state.items, itemId);
   const children = treeItem?.children || [];
 
+  let childActivity = {};
+  if (children.length) {
+    try {
+      childActivity = await fetchJson(`/api/work-items/${itemId}/children-activity`);
+    } catch (_) {}
+  }
+
   if (pushToStack && timelineModal.dataset.itemId) {
     timelineNavStack.push(Number(timelineModal.dataset.itemId));
   } else if (!pushToStack) {
@@ -1307,7 +1326,7 @@ async function openTimelineModal(itemId, pushToStack = true) {
       <span>${escapeHtml(item.assignee || "未分配")}</span>
       ${children.length ? `<span>${children.length} 个子任务</span>` : ""}
     </div>
-    ${children.length ? `<div class="mb-12">${renderSubtaskList(children)}</div>` : ""}
+    ${children.length ? `<div class="mb-12">${renderSubtaskList(children, childActivity)}</div>` : ""}
     ${
       events.length
         ? `<div class="h-timeline-wrap"><div class="h-timeline">${events
