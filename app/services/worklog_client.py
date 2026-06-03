@@ -45,6 +45,9 @@ class WorklogClient:
     def get_projects(self) -> list[dict]:
         return self._request("GET", "/projects").get("data", [])
 
+    def get_users(self) -> list[dict]:
+        return self._request("GET", "/users").get("data", [])
+
     def get_tasks(self, project_id: int, status: Optional[str] = None) -> list[dict]:
         params = {}
         if status:
