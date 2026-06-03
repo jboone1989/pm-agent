@@ -383,16 +383,16 @@ body {
 
 .tree-toggle {
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: none;
   background: transparent;
   color: var(--primary);
   cursor: pointer;
-  border-radius: 4px;
-  font-size: 14px;
-  line-height: 22px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 30px;
   text-align: center;
   font-weight: 700;
 }
@@ -404,6 +404,8 @@ body {
 .tree-toggle.spacer {
   visibility: hidden;
   pointer-events: none;
+  width: 30px;
+  height: 30px;
 }
 
 .task-badges {
