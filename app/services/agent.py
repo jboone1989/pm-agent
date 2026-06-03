@@ -165,8 +165,7 @@ def _build_system_prompt(session: Session, message: str) -> str:
 
 今天={today}。任务总数{len(items)}。顶层项目：{json.dumps(projects, ensure_ascii=False)}。人员：{assignees}。
 {ref_hint}
-规则：创建时父级默认放引用项目下。搜索用search。ad_hoc=临时。"""
-- 创建子任务设置 parent_id"""
+规则：创建时父级默认放引用项目下。搜索用search。ad_hoc=临时。- 创建子任务设置 parent_id"""
 
 
 def _serialize_item(item) -> dict[str, Any]:
