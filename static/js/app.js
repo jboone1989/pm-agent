@@ -548,8 +548,19 @@ function needsDailyFollowUp(item) {
 }
 
 function getFollowUpItems() {
+  const parentIds = new Set();
+  function collectParents(items) {
+    for (const item of items) {
+      if (item.children?.length) {
+        parentIds.add(item.id);
+        collectParents(item.children);
+      }
+    }
+  }
+  collectParents(state.items);
+
   return flattenWorkItems(state.items)
-    .filter(needsDailyFollowUp)
+    .filter((item) => needsDailyFollowUp(item) && !parentIds.has(item.id))
     .sort((a, b) => getFollowUpScore(b) - getFollowUpScore(a) || a.id - b.id);
 }
 
