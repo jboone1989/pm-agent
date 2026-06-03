@@ -174,48 +174,65 @@ def pull_logs(session: Session, project_item_id: int, days: int = 7) -> dict:
 
 
 def push_single_task(session: Session, item_id: int) -> dict:
+    created = 0
+    updated = 0
+
+    def _push_one(task_id: int, project_remote_id: int, client: WorklogClient) -> None:
+        nonlocal created, updated
+        task = session.get(WorkItem, task_id)
+        if not task:
+            return
+        payload = {
+            "name": task.title,
+            "description": task.description or "",
+            "status": _map_status(task.status),
+            "progress": task.progress or 0,
+            "priority": task.priority.value if task.priority else "medium",
+        }
+        local_parent_id = task.parent_id
+        if local_parent_id:
+            lp = session.get(WorkItem, local_parent_id)
+            if lp and lp.remote_id and lp.parent_id is not None:
+                payload["parent_id"] = lp.remote_id
+
+        if task.remote_id:
+            try:
+                client.update_task(task.remote_id, payload)
+                updated += 1
+                return
+            except WorklogError as e:
+                if "404" in str(e):
+                    task.remote_id = None
+                    session.add(task)
+                    session.commit()
+                else:
+                    return
+
+        try:
+            result = client.create_task(project_remote_id, payload)
+        except WorklogError:
+            return
+        if result and result.get("id"):
+            task.remote_id = result["id"]
+            session.add(task)
+            created += 1
+
     item = session.get(WorkItem, item_id)
     if not item:
         raise WorklogError("任务不存在")
     if not item.parent_id:
-        raise WorklogError("根任务不能推送，请推送到具体子任务")
+        raise WorklogError("根任务不能推送")
+
     parent = session.get(WorkItem, item.parent_id)
     if not parent or not parent.remote_id:
         raise WorklogError("父项目未关联 Worklog")
 
-    client = WorklogClient()
-    payload = {
-        "name": item.title,
-        "description": item.description or "",
-        "status": _map_status(item.status),
-        "progress": item.progress or 0,
-        "priority": item.priority.value if item.priority else "medium",
-    }
-    if item.parent_id != parent.id:
-        grandparent = session.get(WorkItem, item.parent_id)
-        if grandparent and grandparent.remote_id:
-            payload["parent_id"] = grandparent.remote_id
-
-    if item.remote_id:
-        try:
-            client.update_task(item.remote_id, payload)
-            return {"action": "updated", "remote_id": item.remote_id}
-        except WorklogError:
-            item.remote_id = None
-            session.add(item)
-            session.commit()
-
-    try:
-        result = client.create_task(parent.remote_id, payload)
-    except WorklogError as e:
-        raise WorklogError(f"创建到项目#{parent.remote_id}失败: {e}")
-
-    if result and result.get("id"):
-        item.remote_id = result["id"]
-        session.add(item)
-        session.commit()
-        return {"action": "created", "remote_id": result["id"]}
-    raise WorklogError("创建失败，未返回ID")
+    descendants = [item] + _collect_descendants(session, item.id)
+    wl_client = WorklogClient()
+    for d in descendants:
+        _push_one(d.id, parent.remote_id, wl_client)
+    session.commit()
+    return {"created": created, "updated": updated, "total": len(descendants)}
 
 
 def pull_all_logs(session: Session, days: int = 7) -> dict:
