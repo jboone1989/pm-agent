@@ -66,14 +66,28 @@ def push_tasks(session: Session, project_item_id: int) -> dict:
             "progress": child.progress or 0,
             "priority": child.priority.value if child.priority else "medium",
         }
-        if child.assignee:
-            payload["assignee_id"] = _resolve_assignee_id(client, child.assignee)
 
         if child.remote_id:
-            client.update_task(child.remote_id, payload)
-            updated += 1
+            try:
+                client.update_task(child.remote_id, payload)
+                updated += 1
+            except WorklogError:
+                child.remote_id = None
+                session.add(child)
+                session.commit()
+                try:
+                    result = client.create_task(project.remote_id, payload)
+                    if result and result.get("id"):
+                        child.remote_id = result["id"]
+                        session.add(child)
+                        created += 1
+                except WorklogError as e:
+                    raise WorklogError(f"创建「{child.title}」到项目#{project.remote_id}失败: {e}")
         else:
-            result = client.create_task(project.remote_id, payload)
+            try:
+                result = client.create_task(project.remote_id, payload)
+            except WorklogError as e:
+                raise WorklogError(f"创建「{child.title}」到项目#{project.remote_id}失败: {e}")
             if result and result.get("id"):
                 child.remote_id = result["id"]
                 session.add(child)
