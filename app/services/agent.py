@@ -99,6 +99,21 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "add_daily_note",
+            "description": "添加临时备忘/日程安排（会议、提醒等），不记入任务列表。日期格式YYYY-MM-DD",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "日期，如2026-06-04"},
+                    "content": {"type": "string", "description": "备忘内容"},
+                },
+                "required": ["date", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "split_work_item",
             "description": "将一个大任务拆成多个子任务",
             "parameters": {
@@ -165,7 +180,7 @@ def _build_system_prompt(session: Session, message: str) -> str:
 
 今天={today}。任务总数{len(items)}。顶层项目：{json.dumps(projects, ensure_ascii=False)}。人员：{assignees}。
 {ref_hint}
-规则：用户汇报新事项必须create子任务。分配人员必须调update设置assignee。只汇报你实际调用了工具的操作，不得虚构未执行的动作。ad_hoc=临时。"""
+规则：用户汇报新事项必须create子任务。临时安排/会议/提醒用add_daily_note不建任务。分配人员调update设置assignee。只汇报实际调用了工具的操作，不得虚构。ad_hoc=临时。"""
 
 
 def _serialize_item(item) -> dict[str, Any]:
@@ -291,6 +306,9 @@ def execute_tool(
         changed_ids.append(log.work_item_id)
         return json.dumps({"id": log.id, "work_item_id": log.work_item_id}, ensure_ascii=False), changed_ids
 
+    if name == "add_daily_note":
+        return json.dumps({"date": arguments["date"], "content": arguments["content"]}, ensure_ascii=False), changed_ids
+
     if name == "split_work_item":
         children = [
             WorkItemCreate(**_normalize_create_arguments(session, child, user_message))
@@ -314,6 +332,7 @@ def _tool_label(name: str, args: dict[str, Any]) -> str:
         "search_work_items": f"搜索「{args.get('query', '')}」",
         "add_activity": f"记录进展到 #{args.get('work_item_id', '')}",
         "split_work_item": f"拆分子任务 #{args.get('parent_id', '')}",
+        "add_daily_note": f"添加备忘：{args.get('content', '')[:30]}",
     }
     return labels.get(name, name)
 

@@ -2095,6 +2095,18 @@ chatForm.addEventListener("submit", async (event) => {
             if (prevTool) {
               prevTool.innerHTML = "✅ " + escapeHtml(payload.label || payload.tool);
             }
+            if (payload.tool === "add_daily_note" && payload.result) {
+              try {
+                const r = typeof payload.result === "string" ? JSON.parse(payload.result) : payload.result;
+                if (r.date && r.content) {
+                  const notes = getDailyNotes(r.date);
+                  if (!notes.includes(r.content)) {
+                    notes.push(r.content);
+                    saveDailyNotes(r.date, notes);
+                  }
+                }
+              } catch (_) {}
+            }
           } else if (eventType === "done") {
             if (fullReply) {
               chatHistory.push({ role: "assistant", content: fullReply });
