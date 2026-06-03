@@ -1950,6 +1950,59 @@ body.is-dragging .drop-zone {
   transform: translate(50%, -50%) scale(1.15);
 }
 
+.daily-notes-wrap {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.daily-note-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.daily-note-text {
+  flex: 1;
+  font-size: 13px;
+}
+
+.daily-note-del {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+}
+
+.daily-note-del:hover {
+  background: var(--danger-light);
+  color: var(--danger);
+}
+
+.daily-note-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.daily-note-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.daily-note-input:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
 .mb-12 {
   margin-bottom: 12px;
 }

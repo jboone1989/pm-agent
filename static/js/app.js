@@ -844,16 +844,20 @@ function renderFollowUpView() {
   const warningCount = items.filter((item) => getTimeProgressInfo(item).kind === "warning").length;
   const activeCount = items.filter((item) => item.status === "in_progress").length;
 
-  if (!items.length) {
+  const todayNotes = getDailyNotes(todayLabel);
+  const notesHtml = renderDailyNotes(todayLabel, todayNotes);
+
+  if (!items.length && !todayNotes.length) {
     viewContent.innerHTML = `
       <section class="followup-section">
         <div class="followup-header">
           <h3>今日跟进 · ${escapeHtml(todayLabel)}</h3>
-          <p>今天没有需要跟进的任务。可以在「列表」查看全部，或通过 Agent 汇报新进展。</p>
+          <p>今天没有需要跟进的任务。</p>
         </div>
-        <div class="empty">暂无待跟进任务</div>
+        ${renderDailyNotes(todayLabel, [])}
       </section>
     `;
+    bindDailyNotes(todayLabel);
     return;
   }
 
@@ -863,54 +867,100 @@ function renderFollowUpView() {
         <h3>今日跟进 · ${escapeHtml(todayLabel)}</h3>
         <p>建议每天更新这些任务的进展，优先处理超期、临期与进行中的工作。</p>
         <div class="followup-summary">
-          <span class="followup-stat">共 ${items.length} 项</span>
+          ${items.length ? `<span class="followup-stat">共 ${items.length} 项</span>` : ""}
           ${overdueCount ? `<span class="followup-stat danger">${overdueCount} 超期</span>` : ""}
           ${warningCount ? `<span class="followup-stat warning">${warningCount} 临期</span>` : ""}
           ${activeCount ? `<span class="followup-stat active">${activeCount} 进行中</span>` : ""}
         </div>
       </div>
-      ${renderRootDropZone()}
-      ${renderTableHead()}
-      ${items.map((item) => `<div class="tree-node">${renderCompactRow(item, { showFollowReason: true })}</div>`).join("")}
+      ${items.length ? renderRootDropZone() + renderTableHead() + items.map((item) => `<div class="tree-node">${renderCompactRow(item, { showFollowReason: true })}</div>`).join("") : ""}
+      ${notesHtml}
     </section>
+  `;
+  bindDailyNotes(todayLabel);
+}
+
+const DAILY_NOTES_KEY = "pm_daily_notes";
+
+function getDailyNotes(dateStr) {
+  try {
+    const raw = localStorage.getItem(DAILY_NOTES_KEY);
+    const data = raw ? JSON.parse(raw) : {};
+    return data[dateStr] || [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveDailyNotes(dateStr, notes) {
+  try {
+    const raw = localStorage.getItem(DAILY_NOTES_KEY);
+    const data = raw ? JSON.parse(raw) : {};
+    data[dateStr] = notes;
+    localStorage.setItem(DAILY_NOTES_KEY, JSON.stringify(data));
+  } catch (_) {}
+}
+
+function renderDailyNotes(dateStr, notes) {
+  const id = `notes-${dateStr}`;
+  return `
+    <div class="daily-notes-wrap" id="${id}">
+      ${notes.map((note, i) => `
+        <div class="daily-note-row">
+          <span class="daily-note-text">${escapeHtml(note)}</span>
+          <button type="button" class="daily-note-del" data-note-idx="${i}" data-date="${dateStr}">×</button>
+        </div>`).join("")}
+      <div class="daily-note-add">
+        <input class="daily-note-input" placeholder="临时备忘，回车添加..." data-date="${dateStr}" />
+        <button type="button" class="btn primary sm daily-note-btn" data-date="${dateStr}">添加</button>
+      </div>
+    </div>
   `;
 }
 
-function getTomorrowItems() {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
-  return flattenWorkItems(state.items)
-    .filter((item) => item.due_date === tomorrowStr && item.status !== "done" && item.status !== "cancelled")
-    .sort((a, b) => (b.priority === "urgent" ? 1 : 0) - (a.priority === "urgent" ? 1 : 0) || a.id - b.id);
+function bindDailyNotes(dateStr) {
+  const addNote = () => {
+    const input = document.querySelector(`.daily-note-input[data-date="${dateStr}"]`);
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+    const notes = getDailyNotes(dateStr);
+    notes.push(text);
+    saveDailyNotes(dateStr, notes);
+    renderCurrentView();
+  };
+  const btn = document.querySelector(`.daily-note-btn[data-date="${dateStr}"]`);
+  const input = document.querySelector(`.daily-note-input[data-date="${dateStr}"]`);
+  if (btn) btn.addEventListener("click", addNote);
+  if (input) input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); addNote(); }
+  });
+  document.querySelectorAll(`.daily-note-del[data-date="${dateStr}"]`).forEach((delBtn) => {
+    delBtn.addEventListener("click", () => {
+      const idx = Number(delBtn.dataset.noteIdx);
+      const notes = getDailyNotes(dateStr);
+      notes.splice(idx, 1);
+      saveDailyNotes(dateStr, notes);
+      renderCurrentView();
+    });
+  });
 }
 
 function renderTomorrowView() {
-  const items = getTomorrowItems();
-  const tomorrowLabel = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-
-  if (!items.length) {
-    viewContent.innerHTML = `
-      <section class="followup-section">
-        <div class="followup-header">
-          <h3>明日计划 · ${escapeHtml(tomorrowLabel)}</h3>
-          <p>截止日期为明天的未完成任务会出现在这里。跟 Agent 说「明天要做xxx」即可自动安排。</p>
-        </div>
-        <div class="empty" style="padding:24px;text-align:center">暂无明日计划</div>
-      </section>`;
-    return;
-  }
+  const tomorrow = new Date(Date.now() + 86400000);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  const notes = getDailyNotes(tomorrowStr);
 
   viewContent.innerHTML = `
     <section class="followup-section">
       <div class="followup-header">
-        <h3>明日计划 · ${escapeHtml(tomorrowLabel)}</h3>
-        <p>共 ${items.length} 项，到期日自动转入今日跟进</p>
+        <h3>明日计划 · ${escapeHtml(tomorrowStr)}</h3>
+        <p>临时备忘，不记入任务列表。第二天自动转入今日计划。</p>
       </div>
-      ${renderTableHead()}
-      ${items.map((item) => `<div class="tree-node">${renderCompactRow(item)}</div>`).join("")}
+      ${renderDailyNotes(tomorrowStr, notes)}
     </section>
   `;
+  bindDailyNotes(tomorrowStr);
 }
 
 function renderListView() {
