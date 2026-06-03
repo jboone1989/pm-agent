@@ -142,6 +142,8 @@ def pull_logs(session: Session, project_item_id: int, days: int = 7) -> dict:
                 if child.title in task_name or task_name in child.title:
                     matched = child
                     break
+        if not matched and (task_name == project.title or task_name in project.title or project.title in task_name):
+            matched = project
 
         if matched:
             session.add(
@@ -246,27 +248,32 @@ def pull_all_logs(session: Session, days: int = 7) -> dict:
         log_date = log_entry.get("log_date", "")
         username = log_entry.get("display_name") or log_entry.get("username", "")
 
-        matched = all_tasks.get(task_name)
-        if not matched:
+        matched_item = all_tasks.get(task_name)
+        if not matched_item:
             for name, child in all_tasks.items():
                 if child.title in task_name or task_name in child.title:
-                    matched = child
+                    matched_item = child
+                    break
+        if not matched_item:
+            for p in projects:
+                if p.title == task_name or p.title in task_name or task_name in p.title:
+                    matched_item = p
                     break
 
-        if matched:
+        if matched_item:
             session.add(
                 ActivityLog(
-                    work_item_id=matched.id,
+                    work_item_id=matched_item.id,
                     content=f"[Worklog {log_date}] {content}",
                     source=ActivitySource.worklog,
                 )
             )
-            new_progress = _infer_progress(content, matched.progress or 0)
-            if new_progress != matched.progress:
-                matched.progress = new_progress
+            new_progress = _infer_progress(content, matched_item.progress or 0)
+            if new_progress != matched_item.progress:
+                matched_item.progress = new_progress
                 from app.services.work_items import normalize_progress
-                normalize_progress(matched)
-                session.add(matched)
+                normalize_progress(matched_item)
+                session.add(matched_item)
             total_synced += 1
 
         entries.append({
@@ -275,7 +282,7 @@ def pull_all_logs(session: Session, days: int = 7) -> dict:
             "content": content,
             "log_date": log_date,
             "username": username,
-            "matched": matched is not None,
+            "matched": matched_item is not None,
         })
 
     session.commit()
