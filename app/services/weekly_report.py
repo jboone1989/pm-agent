@@ -47,6 +47,11 @@ def collect_open_tasks(session: Session) -> list[dict]:
 
 def generate_report(session: Session, week_key: str) -> WeeklyReport:
     entries = op_log.list_operations(session, week_key)
+    existing = get_saved_report(session, week_key)
+    if existing:
+        session.delete(existing)
+        session.commit()
+
     if not entries and not LLM_API_KEY:
         report = WeeklyReport(
             week_key=week_key,
@@ -92,10 +97,6 @@ def generate_report(session: Session, week_key: str) -> WeeklyReport:
             f"- {task['title']}（进度 {task['progress']}%，截止 {task['due_date'] or '未设置'}）"
             for task in open_tasks[:15]
         )
-        saved = get_saved_report(session, week_key)
-        if saved:
-            session.delete(saved)
-            session.commit()
         report = WeeklyReport(
             week_key=week_key,
             this_week_summary=summary or "本周暂无操作记录。",
@@ -118,11 +119,6 @@ def generate_report(session: Session, week_key: str) -> WeeklyReport:
     )
     content = response.choices[0].message.content or "{}"
     payload = json.loads(content)
-
-    existing = get_saved_report(session, week_key)
-    if existing:
-        session.delete(existing)
-        session.commit()
 
     report = WeeklyReport(
         week_key=week_key,
