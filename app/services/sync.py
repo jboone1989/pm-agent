@@ -153,6 +153,14 @@ def pull_logs(session: Session, project_item_id: int, days: int = 7) -> dict:
                     source=ActivitySource.worklog,
                 )
             )
+
+            new_progress = _infer_progress(content, matched.progress or 0)
+            if new_progress != matched.progress:
+                matched.progress = new_progress
+                from app.services.work_items import normalize_progress
+                normalize_progress(matched)
+                session.add(matched)
+
             synced += 1
 
     session.commit()
@@ -275,6 +283,22 @@ def pull_all_logs(session: Session, days: int = 7) -> dict:
         "projects": len(projects),
         "entries": entries,
     }
+
+
+def _infer_progress(content: str, current: int) -> int:
+    import re
+    pct_match = re.search(r"(\d{1,3})\s*%", content)
+    if pct_match:
+        return max(0, min(100, int(pct_match.group(1))))
+    if any(kw in content for kw in ["完成", "搞定", "做完", "上线", "发布", "合入", "done"]):
+        return 100
+    if any(kw in content for kw in ["基本完成", "差不多了", "收尾", "测试中"]):
+        return max(current, 90)
+    if any(kw in content for kw in ["进行中", "开发中", "修复中", "排查中"]):
+        return max(current, 50)
+    if any(kw in content for kw in ["开始", "启动", "排期"]):
+        return max(current, 10)
+    return current
 
 
 STATUS_MAP = {
