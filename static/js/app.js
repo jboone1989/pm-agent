@@ -7,6 +7,7 @@ const state = {
   chatOpen: false,
   weeklyWeekKey: null,
   weeklyLog: null,
+  weeklyHistory: null,
   expandedItemIds: new Set(),
 };
 
@@ -901,56 +902,86 @@ function renderPersonView() {
     .join("");
 }
 
+async function loadWeeklyHistory() {
+  const weeks = await fetchJson("/api/weekly-log/history?weeks=8");
+  state.weeklyHistory = weeks;
+  renderWeeklyView();
+}
+
 function renderWeeklyView() {
-  const data = state.weeklyLog;
-  if (!data) {
+  const weeks = state.weeklyHistory;
+  if (!weeks || !weeks.length) {
     viewContent.innerHTML = `<div class="empty">加载周报中...</div>`;
     return;
   }
 
-  const report = data.report;
+  const currentWeekKey = getCurrentWeekKey();
+  const currentIdx = weeks.findIndex((w) => w.week_key === currentWeekKey);
+
   viewContent.innerHTML = `
     <div class="weekly-toolbar">
-      <button type="button" class="btn secondary btn-sm" data-week-nav="-1">上一周</button>
-      <span class="week-label">${escapeHtml(data.week_label)}</span>
-      <button type="button" class="btn secondary btn-sm" data-week-nav="1">下一周</button>
-      <button type="button" class="btn primary btn-sm" id="generateWeeklyBtn">生成周报</button>
+      <span class="week-label">最近 ${weeks.length} 周</span>
+      <button type="button" class="btn primary btn-sm" id="generateWeeklyBtn">生成本周周报</button>
     </div>
-    <section class="weekly-section">
-      <h3>本周工作</h3>
-      <div class="report-box">${escapeHtml(report?.this_week_summary || "尚未生成。点击「生成周报」基于下方操作记录自动总结。")}</div>
-    </section>
-    <section class="weekly-section">
-      <h3>下周计划</h3>
-      <div class="report-box">${escapeHtml(report?.next_week_plan || "生成周报后将根据未完成任务与截止日给出建议。")}</div>
-    </section>
-    <section class="weekly-section">
-      <h3>本周操作记录（${data.entries.length} 条）</h3>
-      ${
-        data.entries.length
-          ? `<div class="report-box" style="padding:0">${data.entries
-              .map(
-                (entry) => `
-                  <div class="log-entry">
-                    <span class="log-time">${escapeHtml(formatLogTime(entry.created_at))}</span>
-                    <span class="log-action">${escapeHtml(ACTION_LABELS[entry.action] || entry.action)}</span>
-                    <span class="log-message">${escapeHtml(entry.message)}</span>
-                  </div>
-                `
-              )
-              .join("")}</div>`
-          : `<div class="empty">本周还没有操作记录。编辑任务、与 Agent 对话后会自动记录在这里。</div>`
-      }
-    </section>
+    <div class="weekly-timeline-wrap">
+      <div class="weekly-timeline">
+        ${weeks
+          .map(
+            (w, i) => {
+              const isCurrent = w.week_key === currentWeekKey;
+              const report = w.report;
+              return `
+            <div class="weekly-card${isCurrent ? " weekly-card-current" : ""}">
+              <div class="weekly-card-header">
+                <span class="weekly-card-week">${escapeHtml(w.week_label)}</span>
+                <span class="weekly-card-date">${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</span>
+              </div>
+              <div class="weekly-card-body">
+                <div class="weekly-card-section">
+                  <h4>本周工作</h4>
+                  <div class="weekly-card-text">${escapeHtml(report?.this_week_summary || "（未生成）")}</div>
+                </div>
+                ${report?.next_week_plan ? `
+                <div class="weekly-card-section">
+                  <h4>下周计划</h4>
+                  <div class="weekly-card-text">${escapeHtml(report.next_week_plan)}</div>
+                </div>` : ""}
+                <div class="weekly-card-section">
+                  <h4>操作记录（${w.entries.length} 条）</h4>
+                  ${w.entries.length
+                    ? w.entries
+                        .slice(0, 5)
+                        .map(
+                          (e) => `
+                    <div class="weekly-log-mini">
+                      <span class="weekly-log-mini-time">${escapeHtml(formatLogTime(e.created_at))}</span>
+                      <span class="weekly-log-mini-action">${escapeHtml(ACTION_LABELS[e.action] || e.action)}</span>
+                      <span class="weekly-log-mini-msg">${escapeHtml(e.message)}</span>
+                    </div>`
+                        )
+                        .join("")
+                    : `<div class="weekly-log-mini empty">无记录</div>`
+                  }
+                  ${w.entries.length > 5 ? `<div class="weekly-log-mini more">... 还有 ${w.entries.length - 5} 条</div>` : ""}
+                </div>
+              </div>
+            </div>`;
+            }
+          )
+          .join("")}
+      </div>
+    </div>
   `;
 
   document.getElementById("generateWeeklyBtn").addEventListener("click", generateWeeklyReport);
-  document.querySelectorAll("[data-week-nav]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const offset = Number(button.dataset.weekNav);
-      loadWeeklyLog(shiftWeekKey(data.week_key, offset));
-    });
-  });
+  const container = viewContent.querySelector(".weekly-timeline-wrap");
+  if (currentIdx >= 0) {
+    const card = container.querySelectorAll(".weekly-card")[currentIdx];
+    if (card) {
+      card.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    }
+  }
+}
 }
 
 async function loadWeeklyLog(weekKey = null) {
@@ -972,7 +1003,7 @@ async function generateWeeklyReport() {
     const week = state.weeklyWeekKey || state.weeklyLog?.week_key;
     const url = week ? `/api/weekly-log/generate?week=${encodeURIComponent(week)}` : "/api/weekly-log/generate";
     await fetchJson(url, { method: "POST" });
-    await loadWeeklyLog(week);
+    await loadWeeklyHistory();
   } catch (error) {
     window.alert(`生成失败：${error.message}`);
   } finally {
@@ -1007,8 +1038,8 @@ function renderCurrentView() {
   if (state.currentView === "person") renderPersonView();
   if (state.currentView === "project") renderProjectView();
   if (state.currentView === "weekly") {
-    if (state.weeklyLog) renderWeeklyView();
-    else loadWeeklyLog(state.weeklyWeekKey);
+    if (state.weeklyHistory) renderWeeklyView();
+    else loadWeeklyHistory();
   }
   if (state.currentView === "members") renderMembersView();
 }

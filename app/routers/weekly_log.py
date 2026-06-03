@@ -42,6 +42,36 @@ def get_weekly_log(week: Optional[str] = None, session: Session = Depends(get_se
     )
 
 
+@router.get("/history", response_model=list[WeeklyLogResponse])
+def get_weekly_log_history(weeks: int = 8, session: Session = Depends(get_session)):
+    result = []
+    current = op_log.week_key_from_dt()
+    for i in range(weeks - 1, -1, -1):
+        wk = op_log.shift_week_key(current, -i)
+        start, end = op_log.parse_week_key(wk)
+        entries = op_log.list_operations(session, wk)
+        saved = weekly_report_service.get_saved_report(session, wk)
+        report = (
+            WeeklyReportRead(
+                week_key=saved.week_key,
+                this_week_summary=saved.this_week_summary,
+                next_week_plan=saved.next_week_plan,
+                generated_at=saved.generated_at,
+            )
+            if saved
+            else None
+        )
+        result.append(WeeklyLogResponse(
+            week_key=wk,
+            week_label=op_log.week_label(wk),
+            start_date=start,
+            end_date=end,
+            entries=[OperationLogRead.model_validate(e, from_attributes=True) for e in entries],
+            report=report,
+        ))
+    return result
+
+
 @router.post("/generate", response_model=WeeklyReportGenerateResponse)
 def generate_weekly_report(week: Optional[str] = None, session: Session = Depends(get_session)):
     week_key = week or op_log.week_key_from_dt()
