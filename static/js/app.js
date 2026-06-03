@@ -1747,6 +1747,45 @@ viewContent.addEventListener("click", async (event) => {
   }
 });
 
+// Right-click context menu on task rows
+viewContent.addEventListener("contextmenu", (event) => {
+  const row = event.target.closest(".task-row");
+  if (!row) return;
+  event.preventDefault();
+  const itemId = Number(row.dataset.itemId);
+  const title = row.dataset.itemTitle || "";
+
+  const existing = document.getElementById("taskContextMenu");
+  if (existing) existing.remove();
+
+  const menu = document.createElement("div");
+  menu.id = "taskContextMenu";
+  menu.className = "context-menu";
+  menu.style.left = event.pageX + "px";
+  menu.style.top = event.pageY + "px";
+  menu.innerHTML = `
+    <button type="button" class="context-menu-item" data-action="ref">🔗 发送到对话框</button>
+    <button type="button" class="context-menu-item" data-action="open">📋 查看详情</button>
+  `;
+  document.body.appendChild(menu);
+
+  menu.addEventListener("click", (e) => {
+    const action = e.target.closest("[data-action]")?.dataset.action;
+    menu.remove();
+    if (action === "ref") {
+      chatInput.value += ` #${itemId}「${title}」`;
+      chatInput.focus();
+      setChatOpen(true);
+    } else if (action === "open") {
+      openTimelineModal(itemId);
+    }
+  });
+
+  const close = () => menu.remove();
+  document.addEventListener("click", close, { once: true });
+  document.addEventListener("contextmenu", close, { once: true });
+});
+
 // Drag & Drop event delegation
 viewContent.addEventListener("dragstart", (event) => {
   const row = event.target.closest(".task-row");
