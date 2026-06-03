@@ -933,16 +933,13 @@ function renderWeeklyView() {
   const currentIdx = weeks.findIndex((w) => w.week_key === currentWeekKey);
 
   const reportCards = weeks.map((w, i) => {
-    const isCurrent = w.week_key === currentWeekKey;
     const report = w.report;
-    const preview = report?.this_week_summary
-      ? report.this_week_summary.slice(0, 60) + (report.this_week_summary.length > 60 ? "…" : "")
-      : "（未生成）";
+    const preview = report?.this_week_summary || "（未生成）";
     return `
-      <div class="weekly-card${isCurrent ? " weekly-card-current" : ""}" data-week-idx="${i}">
+      <div class="weekly-card weekly-report-card" data-week-idx="${i}">
         <div class="weekly-card-header">
           <span class="weekly-card-week">${escapeHtml(w.week_label)}</span>
-          <span class="weekly-card-date">${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</span>
+          <span class="weekly-card-date">📋 工作总结</span>
         </div>
         <div class="weekly-card-body">
           <div class="weekly-card-preview">${escapeHtml(preview)}</div>
@@ -951,24 +948,19 @@ function renderWeeklyView() {
   }).join("");
 
   const logCards = weeks.map((w, i) => {
-    const latest = w.entries[0];
     return `
       <div class="weekly-log-card" data-week-idx="${i}">
         <div class="weekly-log-card-header">
           <span class="weekly-card-week">${escapeHtml(w.week_label)}</span>
-          <span class="weekly-card-date">${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</span>
-          <span class="weekly-log-count">${w.entries.length} 条</span>
+          <span class="weekly-card-date">📝 ${w.entries.length} 条操作</span>
         </div>
         <div class="weekly-log-card-body">
-          ${latest
-            ? `<div class="weekly-log-mini">
-              <span class="weekly-log-mini-time">${escapeHtml(formatLogTime(latest.created_at))}</span>
-              <span class="weekly-log-mini-action">${escapeHtml(ACTION_LABELS[latest.action] || latest.action)}</span>
-              <span class="weekly-log-mini-msg">${escapeHtml(latest.message)}</span>
-            </div>`
-            : `<div class="weekly-log-mini empty">无记录</div>`
-          }
-          ${w.entries.length > 1 ? `<div class="weekly-log-mini more">... 共 ${w.entries.length} 条，点击查看详情</div>` : ""}
+          ${w.entries.slice(0, 3).map((e) => `
+            <div class="weekly-log-mini">
+              <span class="weekly-log-mini-time">${escapeHtml(formatLogTime(e.created_at))}</span>
+              <span class="weekly-log-mini-msg">${escapeHtml(e.message)}</span>
+            </div>`).join("") || `<div class="weekly-log-mini empty">无记录</div>`}
+          ${w.entries.length > 3 ? `<div class="weekly-log-mini more">... 共 ${w.entries.length} 条</div>` : ""}
         </div>
       </div>`;
   }).join("");
@@ -995,7 +987,7 @@ function renderWeeklyView() {
   document.getElementById("generateWeeklyBtn").addEventListener("click", generateWeeklyReport);
 
   // Click to show detail modal
-  viewContent.querySelectorAll(".weekly-card, .weekly-log-card").forEach((card) => {
+  viewContent.querySelectorAll(".weekly-report-card, .weekly-log-card").forEach((card) => {
     card.style.cursor = "pointer";
     card.addEventListener("click", () => {
       const idx = Number(card.dataset.weekIdx);
@@ -1016,7 +1008,7 @@ function renderWeeklyView() {
   reportWrap.addEventListener("scroll", () => syncScroll(reportWrap, logWrap));
   logWrap.addEventListener("scroll", () => syncScroll(logWrap, reportWrap));
 
-  const allCards = reportWrap.querySelectorAll(".weekly-card");
+  const allCards = reportWrap.querySelectorAll(".weekly-report-card");
   const lastCard = allCards[allCards.length - 1];
   if (lastCard) {
     lastCard.scrollIntoView({ behavior: "instant", inline: "end", block: "nearest" });
