@@ -47,54 +47,73 @@ def push_tasks(session: Session, project_item_id: int) -> dict:
     if not project or not project.remote_id:
         raise WorklogError("该项目未关联 Worklog 项目")
 
-    children = session.exec(
-        select(WorkItem).where(WorkItem.parent_id == project_item_id)
-    ).all()
-
-    if not children:
+    all_descendants = _collect_descendants(session, project_item_id)
+    if not all_descendants:
         return {"created": 0, "updated": 0}
 
     client = WorklogClient()
     created = 0
     updated = 0
 
-    for child in children:
+    for item in all_descendants:
         payload = {
-            "name": child.title,
-            "description": child.description or "",
-            "status": _map_status(child.status),
-            "progress": child.progress or 0,
-            "priority": child.priority.value if child.priority else "medium",
+            "name": item.title,
+            "description": item.description or "",
+            "status": _map_status(item.status),
+            "progress": item.progress or 0,
+            "priority": item.priority.value if item.priority else "medium",
         }
 
-        if child.remote_id:
+        wl_parent_id = project.remote_id
+        if item.parent_id != project_item_id:
+            parent_item = session.get(WorkItem, item.parent_id)
+            if parent_item and parent_item.remote_id:
+                wl_parent_id = parent_item.remote_id
+        payload["parent_id"] = wl_parent_id
+
+        if item.remote_id:
             try:
-                client.update_task(child.remote_id, payload)
+                client.update_task(item.remote_id, payload)
                 updated += 1
             except WorklogError:
-                child.remote_id = None
-                session.add(child)
+                item.remote_id = None
+                session.add(item)
                 session.commit()
                 try:
                     result = client.create_task(project.remote_id, payload)
                     if result and result.get("id"):
-                        child.remote_id = result["id"]
-                        session.add(child)
+                        item.remote_id = result["id"]
+                        session.add(item)
                         created += 1
                 except WorklogError as e:
-                    raise WorklogError(f"创建「{child.title}」到项目#{project.remote_id}失败: {e}")
+                    raise WorklogError(f"创建「{item.title}」失败: {e}")
         else:
             try:
                 result = client.create_task(project.remote_id, payload)
             except WorklogError as e:
-                raise WorklogError(f"创建「{child.title}」到项目#{project.remote_id}失败: {e}")
+                raise WorklogError(f"创建「{item.title}」失败: {e}")
             if result and result.get("id"):
-                child.remote_id = result["id"]
-                session.add(child)
+                item.remote_id = result["id"]
+                session.add(item)
                 created += 1
 
     session.commit()
     return {"created": created, "updated": updated}
+
+
+def _collect_descendants(session: Session, root_id: int) -> list[WorkItem]:
+    """BFS to collect all descendants, parents before children."""
+    result: list[WorkItem] = []
+    queue = [root_id]
+    while queue:
+        parent_id = queue.pop(0)
+        children = session.exec(
+            select(WorkItem).where(WorkItem.parent_id == parent_id)
+        ).all()
+        for child in children:
+            result.append(child)
+            queue.append(child.id)
+    return result
 
 
 def pull_logs(session: Session, project_item_id: int, days: int = 7) -> dict:
@@ -158,12 +177,19 @@ def push_single_task(session: Session, item_id: int) -> dict:
         raise WorklogError("父项目未关联 Worklog")
 
     client = WorklogClient()
+    wl_parent_id = parent.remote_id
+    if item.parent_id != parent.id:
+        grandparent = session.get(WorkItem, item.parent_id)
+        if grandparent and grandparent.remote_id:
+            wl_parent_id = grandparent.remote_id
+
     payload = {
         "name": item.title,
         "description": item.description or "",
         "status": _map_status(item.status),
         "progress": item.progress or 0,
         "priority": item.priority.value if item.priority else "medium",
+        "parent_id": wl_parent_id,
     }
 
     if item.remote_id:
