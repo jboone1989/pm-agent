@@ -574,9 +574,8 @@ body {
   padding: 10px 12px;
   border-top: 1px solid var(--border);
   display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 8px;
+  flex-direction: column;
+  gap: 0;
   flex-shrink: 0;
   background: var(--surface);
 }
@@ -699,6 +698,32 @@ body {
   font-size: 13px;
   font-family: inherit;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.btn-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+  margin-top: 6px;
+  align-self: flex-end;
+}
+
+.btn-send:hover {
+  background: #1d4ed8;
+}
+
+.btn-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .chat-form textarea:focus {
