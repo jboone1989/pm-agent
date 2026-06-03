@@ -932,65 +932,88 @@ function renderWeeklyView() {
   const currentWeekKey = getCurrentWeekKey();
   const currentIdx = weeks.findIndex((w) => w.week_key === currentWeekKey);
 
+  const reportCards = weeks.map((w) => {
+    const isCurrent = w.week_key === currentWeekKey;
+    const report = w.report;
+    return `
+      <div class="weekly-card${isCurrent ? " weekly-card-current" : ""}">
+        <div class="weekly-card-header">
+          <span class="weekly-card-week">${escapeHtml(w.week_label)}</span>
+          <span class="weekly-card-date">${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</span>
+        </div>
+        <div class="weekly-card-body">
+          <div class="weekly-card-section">
+            <h4>本周工作</h4>
+            <div class="weekly-card-text">${escapeHtml(report?.this_week_summary || "（未生成）")}</div>
+          </div>
+          ${report?.next_week_plan ? `
+          <div class="weekly-card-section">
+            <h4>下周计划</h4>
+            <div class="weekly-card-text">${escapeHtml(report.next_week_plan)}</div>
+          </div>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+
+  const logCards = weeks.map((w) => {
+    return `
+      <div class="weekly-log-card">
+        <div class="weekly-log-card-header">
+          <span class="weekly-card-week">${escapeHtml(w.week_label)}</span>
+          <span class="weekly-card-date">${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</span>
+          <span class="weekly-log-count">${w.entries.length} 条</span>
+        </div>
+        <div class="weekly-log-card-body">
+          ${w.entries.length
+            ? w.entries.map((e) => `
+              <div class="weekly-log-mini">
+                <span class="weekly-log-mini-time">${escapeHtml(formatLogTime(e.created_at))}</span>
+                <span class="weekly-log-mini-action">${escapeHtml(ACTION_LABELS[e.action] || e.action)}</span>
+                <span class="weekly-log-mini-msg">${escapeHtml(e.message)}</span>
+              </div>`).join("")
+            : `<div class="weekly-log-mini empty">无记录</div>`
+          }
+        </div>
+      </div>`;
+  }).join("");
+
   viewContent.innerHTML = `
     <div class="weekly-toolbar">
       <span class="week-label">最近 ${weeks.length} 周</span>
       <button type="button" class="btn primary btn-sm" id="generateWeeklyBtn">生成本周周报</button>
     </div>
-    <div class="weekly-timeline-wrap">
-      <div class="weekly-timeline">
-        ${weeks
-          .map(
-            (w, i) => {
-              const isCurrent = w.week_key === currentWeekKey;
-              const report = w.report;
-              return `
-            <div class="weekly-card${isCurrent ? " weekly-card-current" : ""}">
-              <div class="weekly-card-header">
-                <span class="weekly-card-week">${escapeHtml(w.week_label)}</span>
-                <span class="weekly-card-date">${escapeHtml(w.start_date)} ~ ${escapeHtml(w.end_date)}</span>
-              </div>
-              <div class="weekly-card-body">
-                <div class="weekly-card-section">
-                  <h4>本周工作</h4>
-                  <div class="weekly-card-text">${escapeHtml(report?.this_week_summary || "（未生成）")}</div>
-                </div>
-                ${report?.next_week_plan ? `
-                <div class="weekly-card-section">
-                  <h4>下周计划</h4>
-                  <div class="weekly-card-text">${escapeHtml(report.next_week_plan)}</div>
-                </div>` : ""}
-                <div class="weekly-card-section">
-                  <h4>操作记录（${w.entries.length} 条）</h4>
-                  ${w.entries.length
-                    ? w.entries
-                        .slice(0, 5)
-                        .map(
-                          (e) => `
-                    <div class="weekly-log-mini">
-                      <span class="weekly-log-mini-time">${escapeHtml(formatLogTime(e.created_at))}</span>
-                      <span class="weekly-log-mini-action">${escapeHtml(ACTION_LABELS[e.action] || e.action)}</span>
-                      <span class="weekly-log-mini-msg">${escapeHtml(e.message)}</span>
-                    </div>`
-                        )
-                        .join("")
-                    : `<div class="weekly-log-mini empty">无记录</div>`
-                  }
-                  ${w.entries.length > 5 ? `<div class="weekly-log-mini more">... 还有 ${w.entries.length - 5} 条</div>` : ""}
-                </div>
-              </div>
-            </div>`;
-            }
-          )
-          .join("")}
+    <div class="weekly-section">
+      <h3>周报</h3>
+      <div class="weekly-timeline-wrap" id="reportTimeline">
+        <div class="weekly-timeline">${reportCards}</div>
+      </div>
+    </div>
+    <div class="weekly-section">
+      <h3>操作记录</h3>
+      <div class="weekly-timeline-wrap" id="logTimeline">
+        <div class="weekly-timeline">${logCards}</div>
       </div>
     </div>
   `;
 
   document.getElementById("generateWeeklyBtn").addEventListener("click", generateWeeklyReport);
-  const container = viewContent.querySelector(".weekly-timeline-wrap");
+
+  // Sync scroll between the two timelines
+  const reportWrap = document.getElementById("reportTimeline");
+  const logWrap = document.getElementById("logTimeline");
+  let syncing = false;
+  function syncScroll(source, target) {
+    if (syncing) return;
+    syncing = true;
+    target.scrollLeft = source.scrollLeft;
+    syncing = false;
+  }
+  reportWrap.addEventListener("scroll", () => syncScroll(reportWrap, logWrap));
+  logWrap.addEventListener("scroll", () => syncScroll(logWrap, reportWrap));
+
+  // Scroll current week into view
   if (currentIdx >= 0) {
-    const card = container.querySelectorAll(".weekly-card")[currentIdx];
+    const card = reportWrap.querySelectorAll(".weekly-card")[currentIdx];
     if (card) {
       card.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
     }

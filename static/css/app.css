@@ -1525,6 +1525,44 @@ body {
   font-size: 15px;
 }
 
+.weekly-log-card {
+  width: 320px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.weekly-log-card-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--border-light);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.weekly-log-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+}
+
+.weekly-log-card-body {
+  padding: 8px 14px;
+  overflow-y: auto;
+  flex: 1;
+  max-height: 300px;
+}
+
 .weekly-log-mini {
   display: flex;
   gap: 6px;
