@@ -576,8 +576,7 @@ function renderCompactRow(item, { inTree = false, showFollowReason = false } = {
       <button type="button" class="task-chat-btn" data-send-ref="${item.id}" title="发送到对话框">#</button>
       ${renderTitleCell(item, { inTree })}
       <span class="task-badges">
-        ${showFollowReason ? badge(followReason, `follow-${followReason === "超期" ? "overdue" : followReason === "临期" ? "warning" : "active"}`) : ""}
-        ${badge(STATUS_LABELS[item.status] || item.status, `status-${item.status}`)}
+        ${showFollowReason ? badge(followReason, `follow-${followReason === "超期" ? "overdue" : followReason === "临期" ? "warning" : "active"}`) : badge(STATUS_LABELS[item.status] || item.status, `status-${item.status}`)}
         ${item.type === "ad_hoc" ? badge(TYPE_LABELS.ad_hoc, "type-ad_hoc") : ""}
         ${!showFollowReason && timeInfo.kind === "warning" ? badge("临期", "time-warning") : ""}
         ${!showFollowReason && timeInfo.kind === "overdue" ? badge("超期", "time-overdue") : ""}
