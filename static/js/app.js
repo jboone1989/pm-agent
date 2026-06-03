@@ -562,7 +562,7 @@ function renderCompactRow(item, { inTree = false, showFollowReason = false } = {
 
   return `
     <div class="task-row clickable${isDone ? " task-row--done" : ""}" data-item-id="${item.id}" data-item-title="${escapeHtml(item.title)}" draggable="true">
-      <button type="button" class="task-chat-btn" data-send-ref="${item.id}" title="发送到对话框">💬</button>
+      <button type="button" class="task-chat-btn" data-send-ref="${item.id}" title="发送到对话框">#</button>
       ${renderTitleCell(item, { inTree })}
       <span class="task-badges">
         ${showFollowReason ? badge(followReason, `follow-${followReason === "超期" ? "overdue" : followReason === "临期" ? "warning" : "active"}`) : ""}
