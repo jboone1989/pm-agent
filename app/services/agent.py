@@ -21,7 +21,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_work_item",
-            "description": "创建新的工作项（项目、子任务或临时事项）",
+            "description": "创建新任务/子任务/项目。用户汇报新事项必须用此工具",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -85,7 +85,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "add_activity",
-            "description": "为工作项添加进展记录",
+            "description": "为任务添加进展备注/状态更新记录（非新建任务）",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -165,7 +165,7 @@ def _build_system_prompt(session: Session, message: str) -> str:
 
 今天={today}。任务总数{len(items)}。顶层项目：{json.dumps(projects, ensure_ascii=False)}。人员：{assignees}。
 {ref_hint}
-规则：创建时父级默认放引用项目下。搜索用search。ad_hoc=临时。- 创建子任务设置 parent_id"""
+规则：用户汇报新事项/新问题/新需求时必须create子任务放到引用项目下，不要只add_activity。仅进展更新或随口备注才用add_activity。ad_hoc=临时。"""
 
 
 def _serialize_item(item) -> dict[str, Any]:
