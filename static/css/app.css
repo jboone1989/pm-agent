@@ -1446,7 +1446,7 @@ body {
 }
 
 .weekly-card {
-  width: 320px;
+  width: 280px;
   flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1455,21 +1455,29 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  border-left: 4px solid var(--primary);
 }
 
 .weekly-card-current {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  border-left: 4px solid var(--primary);
 }
 
 .weekly-card-header {
-  padding: 12px 14px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  background: var(--border-light);
+  background: var(--primary-light);
 }
 
 .weekly-card-current .weekly-card-header {
-  background: var(--primary-light);
+  background: var(--primary);
+  color: #fff;
+}
+
+.weekly-card-current .weekly-card-header .weekly-card-week,
+.weekly-card-current .weekly-card-header .weekly-card-date {
+  color: #fff;
 }
 
 .weekly-card-week {
@@ -1537,7 +1545,7 @@ body {
 }
 
 .weekly-log-card {
-  width: 320px;
+  width: 280px;
   flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1546,6 +1554,7 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  border-left: 4px solid var(--text-secondary);
 }
 
 .weekly-log-card-header {

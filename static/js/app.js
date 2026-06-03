@@ -1016,11 +1016,10 @@ function renderWeeklyView() {
   reportWrap.addEventListener("scroll", () => syncScroll(reportWrap, logWrap));
   logWrap.addEventListener("scroll", () => syncScroll(logWrap, reportWrap));
 
-  if (currentIdx >= 0) {
-    const card = reportWrap.querySelectorAll(".weekly-card")[currentIdx];
-    if (card) {
-      card.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-    }
+  const allCards = reportWrap.querySelectorAll(".weekly-card");
+  const lastCard = allCards[allCards.length - 1];
+  if (lastCard) {
+    lastCard.scrollIntoView({ behavior: "instant", inline: "end", block: "nearest" });
   }
 }
 
