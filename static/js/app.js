@@ -675,13 +675,12 @@ function hideDrawerToast() {
   drawerToast.classList.add("hidden");
 }
 
-function showAppToast(message, type = "error") {
+function showAppToast(message, type = "success") {
   appToast.textContent = message;
   appToast.className = `app-toast ${type}`;
   appToast.classList.remove("hidden");
-  if (type === "success") {
-    window.setTimeout(() => appToast.classList.add("hidden"), 3000);
-  }
+  const duration = type === "error" ? 4000 : 2000;
+  window.setTimeout(() => appToast.classList.add("hidden"), duration);
 }
 
 function populateCreateTaskParentSelect() {
