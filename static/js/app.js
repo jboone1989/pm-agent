@@ -11,6 +11,8 @@ const state = {
   expandedItemIds: new Set(),
 };
 
+const chatHistory = [];
+
 const dragState = { itemId: null, itemTitle: null };
 
 const STATUS_LABELS = {
@@ -1884,11 +1886,14 @@ chatForm.addEventListener("submit", async (event) => {
   const message = chatInput.value.trim();
   if (!message) return;
 
+  chatHistory.push({ role: "user", content: message });
+
   setChatOpen(true);
   appendMessage("user", message);
   chatInput.value = "";
   chatInput.disabled = true;
 
+  let fullReply = "";
   let thinkingMsg = appendMessage("assistant", "⏳ 正在分析...");
   let streamingEl = null;
 
@@ -1896,7 +1901,7 @@ chatForm.addEventListener("submit", async (event) => {
     const response = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, history: chatHistory.slice(0, -1) }),
     });
 
     if (!response.ok) {
@@ -1938,6 +1943,7 @@ chatForm.addEventListener("submit", async (event) => {
               thinkingMsg.innerHTML = "⏳ " + escapeHtml(payload.text);
             }
           } else if (eventType === "text") {
+            fullReply += payload.text;
             if (thinkingMsg && thinkingMsg.parentNode) {
               thinkingMsg.remove();
               thinkingMsg = null;
@@ -1961,6 +1967,9 @@ chatForm.addEventListener("submit", async (event) => {
               prevTool.innerHTML = "✅ " + escapeHtml(payload.label || payload.tool);
             }
           } else if (eventType === "done") {
+            if (fullReply) {
+              chatHistory.push({ role: "assistant", content: fullReply });
+            }
             streamingEl = null;
           }
         } catch (e) {

@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 @router.post("", response_model=ChatResponse)
 def chat(payload: ChatRequest, session: Session = Depends(get_session)):
-    reply, actions, changed_ids = agent_service.run_agent(session, payload.message)
+    reply, actions, changed_ids = agent_service.run_agent(session, payload.message, payload.history)
     op_log.record_chat(session, payload.message, reply, actions)
     return ChatResponse(reply=reply, actions=actions, changed_item_ids=changed_ids)
 
@@ -23,7 +23,7 @@ def chat_stream(payload: ChatRequest, session: Session = Depends(get_session)):
         reply = ""
         actions = []
         changed_ids = []
-        for sse in agent_service.run_agent_stream(session, payload.message):
+        for sse in agent_service.run_agent_stream(session, payload.message, payload.history):
             # Track the final reply, actions, and ids from the done event
             if sse.startswith("event: done"):
                 import json as _json

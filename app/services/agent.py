@@ -327,14 +327,18 @@ def _tool_label(name: str, args: dict[str, Any]) -> str:
     return labels.get(name, name)
 
 
-def run_agent(session: Session, message: str) -> tuple[str, list[str], list[int]]:
+def run_agent(session: Session, message: str, history: list[dict] | None = None) -> tuple[str, list[str], list[int]]:
     """Non-streaming version for backward compatibility."""
     if not LLM_API_KEY:
         return ("请先在 .env 中配置 LLM_API_KEY 后再使用 Agent。", [], [])
 
     client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_API_BASE)
     system_prompt = _build_system_prompt(session, message)
-    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        # Keep only last 20 turns to avoid context overflow
+        messages.extend(history[-40:])
+    messages.append({"role": "user", "content": message})
     actions = []
     changed_ids = []
 
@@ -359,7 +363,7 @@ def run_agent(session: Session, message: str) -> tuple[str, list[str], list[int]
     return "操作步骤较多，请拆成更小的指令再试。", actions, list(dict.fromkeys(changed_ids))
 
 
-def run_agent_stream(session: Session, message: str) -> Generator[str, None, None]:
+def run_agent_stream(session: Session, message: str, history: list[dict] | None = None) -> Generator[str, None, None]:
     """SSE streaming generator with streaming LLM calls for real-time text display."""
     if not LLM_API_KEY:
         yield _sse("text", {"text": "请先在 .env 中配置 LLM_API_KEY 后再使用 Agent。"})
@@ -368,7 +372,10 @@ def run_agent_stream(session: Session, message: str) -> Generator[str, None, Non
 
     client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_API_BASE)
     system_prompt = _build_system_prompt(session, message)
-    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history[-40:])
+    messages.append({"role": "user", "content": message})
     all_changed_ids = []
     all_actions = []
 
