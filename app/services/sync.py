@@ -119,8 +119,8 @@ def pull_logs(session: Session, project_item_id: int, days: int = 7) -> dict:
     if not project or not project.remote_id:
         raise WorklogError("该项目未关联 Worklog 项目")
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=days)
+    end_date = date.today() + timedelta(days=1)
+    start_date = end_date - timedelta(days=days + 1)
 
     client = WorklogClient()
     logs = client.get_logs(
@@ -222,8 +222,8 @@ def pull_all_logs(session: Session, days: int = 7) -> dict:
         )
     ).all()
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=days)
+    end_date = date.today() + timedelta(days=1)
+    start_date = end_date - timedelta(days=days + 1)
     client = WorklogClient()
 
     entries = []
