@@ -902,6 +902,20 @@ function renderPersonView() {
     .join("");
 }
 
+function getCurrentWeekKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const firstMonday = new Date(jan4);
+  firstMonday.setUTCDate(jan4.getUTCDate() - jan4Day + 1);
+  const days = Math.floor((now - firstMonday) / 86400000);
+  const weekNum = Math.floor(days / 7) + 1;
+  if (weekNum < 1) return `${year - 1}-W52`;
+  if (weekNum > 52) return `${year}-W52`;
+  return `${year}-W${String(weekNum).padStart(2, "0")}`;
+}
+
 async function loadWeeklyHistory() {
   const weeks = await fetchJson("/api/weekly-log/history?weeks=8");
   state.weeklyHistory = weeks;
@@ -1999,7 +2013,7 @@ function showLogsModal(result) {
 document.getElementById("refreshBtn").addEventListener("click", async () => {
   await loadData();
   if (state.currentView === "weekly") {
-    await loadWeeklyLog(state.weeklyWeekKey);
+    await loadWeeklyHistory();
   }
 });
 document.getElementById("closeDrawer").addEventListener("click", () => {
