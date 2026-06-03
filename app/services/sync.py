@@ -154,12 +154,13 @@ def pull_logs(session: Session, project_item_id: int, days: int = 7) -> dict:
                 )
             )
 
-            new_progress = _infer_progress(content, matched.progress or 0)
-            if new_progress != matched.progress:
-                matched.progress = new_progress
-                from app.services.work_items import normalize_progress
-                normalize_progress(matched)
-                session.add(matched)
+            if matched.parent_id is not None:
+                new_progress = _infer_progress(content, matched.progress or 0)
+                if new_progress != matched.progress:
+                    matched.progress = new_progress
+                    from app.services.work_items import normalize_progress
+                    normalize_progress(matched)
+                    session.add(matched)
 
             synced += 1
 
@@ -268,12 +269,13 @@ def pull_all_logs(session: Session, days: int = 7) -> dict:
                     source=ActivitySource.worklog,
                 )
             )
-            new_progress = _infer_progress(content, matched_item.progress or 0)
-            if new_progress != matched_item.progress:
-                matched_item.progress = new_progress
-                from app.services.work_items import normalize_progress
-                normalize_progress(matched_item)
-                session.add(matched_item)
+            if matched_item.parent_id is not None:
+                new_progress = _infer_progress(content, matched_item.progress or 0)
+                if new_progress != matched_item.progress:
+                    matched_item.progress = new_progress
+                    from app.services.work_items import normalize_progress
+                    normalize_progress(matched_item)
+                    session.add(matched_item)
             total_synced += 1
 
         entries.append({

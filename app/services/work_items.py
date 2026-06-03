@@ -19,8 +19,9 @@ def normalize_progress(item: WorkItem) -> None:
     if item.progress >= 100:
         item.progress = 100
         item.status = WorkItemStatus.done
-    elif item.progress > 0 and item.status == WorkItemStatus.todo:
-        item.status = WorkItemStatus.in_progress
+    elif item.progress > 0:
+        if item.status in (WorkItemStatus.todo, WorkItemStatus.done):
+            item.status = WorkItemStatus.in_progress
 
 
 def normalize_dates(start_date: Optional[date], due_date: Optional[date]) -> tuple[date, Optional[date]]:
