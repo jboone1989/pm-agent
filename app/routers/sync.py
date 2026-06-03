@@ -5,7 +5,7 @@ from sqlmodel import Session
 
 from app.db import get_session
 from app.services import sync as sync_service
-from app.services.worklog_client import WorklogError
+from app.services.worklog_client import WorklogClient, WorklogError
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
 
@@ -35,5 +35,25 @@ def pull_logs(
     try:
         result = sync_service.pull_logs(session, project_item_id, days)
         return {"ok": True, **result}
+    except WorklogError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/users")
+def list_users():
+    try:
+        client = WorklogClient()
+        users = client.get_users()
+        return {"ok": True, "data": users}
+    except WorklogError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/users/{user_id}")
+def get_user(user_id: int):
+    try:
+        client = WorklogClient()
+        user = client.get_user(user_id)
+        return {"ok": True, "data": user}
     except WorklogError as e:
         raise HTTPException(status_code=400, detail=str(e))
