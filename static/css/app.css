@@ -975,20 +975,12 @@ body {
   color: var(--primary);
 }
 
-.subtask-badge {
+.subtask-dot {
   display: inline-block;
-  margin-left: 8px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: var(--primary-light, #e0e7ff);
   color: var(--primary);
-  font-size: 11px;
-  max-width: 180px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: middle;
+  font-size: 10px;
   cursor: default;
+  flex-shrink: 0;
 }
 
 .subtask-modal {

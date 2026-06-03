@@ -788,7 +788,7 @@ function renderSubtaskList(children, activityMap = {}) {
       (child) => {
         const lastAct = activityMap[child.id];
         const actBadge = lastAct
-          ? `<span class="subtask-badge" title="${escapeHtml(lastAct)}">${escapeHtml(truncateActivity(lastAct))}</span>`
+          ? `<span class="subtask-dot" title="${escapeHtml(lastAct)}">●</span>`
           : "";
         const progress = clampProgress(child.progress ?? 0);
         return `
@@ -809,11 +809,6 @@ function renderSubtaskList(children, activityMap = {}) {
       }
     )
     .join("")}</ul>`;
-}
-
-function truncateActivity(text) {
-  if (!text) return "";
-  return text.length > 20 ? text.slice(0, 20) + "…" : text;
 }
 
 async function deleteWorkItem(itemId, title) {
