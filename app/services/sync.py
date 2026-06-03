@@ -227,10 +227,20 @@ def push_single_task(session: Session, item_id: int) -> dict:
     if not parent or not parent.remote_id:
         raise WorklogError("父项目未关联 Worklog")
 
+    # Find root project's Worklog ID
+    root = item
+    while root.parent_id:
+        p = session.get(WorkItem, root.parent_id)
+        if not p:
+            break
+        root = p
+    if not root.remote_id:
+        raise WorklogError("根项目未关联 Worklog")
+
     descendants = [item] + _collect_descendants(session, item.id)
     wl_client = WorklogClient()
     for d in descendants:
-        _push_one(d.id, parent.remote_id, wl_client)
+        _push_one(d.id, root.remote_id, wl_client)
     session.commit()
     return {"created": created, "updated": updated, "total": len(descendants)}
 
