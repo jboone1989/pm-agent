@@ -383,22 +383,24 @@ body {
 
 .tree-toggle {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   padding: 0;
-  border: none;
-  background: transparent;
+  border: 1px solid var(--border);
+  background: var(--surface);
   color: var(--text-secondary);
   cursor: pointer;
   border-radius: 4px;
-  font-size: 12px;
-  line-height: 20px;
+  font-size: 11px;
+  line-height: 18px;
   text-align: center;
+  font-weight: 700;
 }
 
 .tree-toggle:hover {
-  background: var(--border-light);
-  color: var(--text);
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .tree-toggle.spacer {
@@ -1912,17 +1914,17 @@ body.is-dragging .drop-zone {
 .task-chat-btn {
   display: none;
   position: absolute;
-  left: -4px;
+  right: -6px;
   top: 50%;
   transform: translateY(-50%);
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border: none;
   border-radius: 50%;
   background: var(--primary);
   color: #fff;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   align-items: center;
   justify-content: center;
