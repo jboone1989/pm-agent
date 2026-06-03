@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlmodel import Session, select
 
@@ -23,7 +23,7 @@ def pull_projects(session: Session) -> dict:
         if existing:
             existing.title = rp["project_name"]
             existing.description = rp.get("description") or ""
-            existing.updated_at = None
+            existing.updated_at = datetime.utcnow()
             session.add(existing)
             updated += 1
         else:
