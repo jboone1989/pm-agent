@@ -64,12 +64,10 @@ def push_tasks(session: Session, project_item_id: int) -> dict:
             "priority": item.priority.value if item.priority else "medium",
         }
 
-        wl_parent_id = project.remote_id
         if item.parent_id != project_item_id:
             parent_item = session.get(WorkItem, item.parent_id)
             if parent_item and parent_item.remote_id:
-                wl_parent_id = parent_item.remote_id
-        payload["parent_id"] = wl_parent_id
+                payload["parent_id"] = parent_item.remote_id
 
         if item.remote_id:
             try:
@@ -177,20 +175,17 @@ def push_single_task(session: Session, item_id: int) -> dict:
         raise WorklogError("父项目未关联 Worklog")
 
     client = WorklogClient()
-    wl_parent_id = parent.remote_id
-    if item.parent_id != parent.id:
-        grandparent = session.get(WorkItem, item.parent_id)
-        if grandparent and grandparent.remote_id:
-            wl_parent_id = grandparent.remote_id
-
     payload = {
         "name": item.title,
         "description": item.description or "",
         "status": _map_status(item.status),
         "progress": item.progress or 0,
         "priority": item.priority.value if item.priority else "medium",
-        "parent_id": wl_parent_id,
     }
+    if item.parent_id != parent.id:
+        grandparent = session.get(WorkItem, item.parent_id)
+        if grandparent and grandparent.remote_id:
+            payload["parent_id"] = grandparent.remote_id
 
     if item.remote_id:
         try:
