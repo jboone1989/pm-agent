@@ -1011,6 +1011,51 @@ function renderCurrentView() {
     if (state.weeklyLog) renderWeeklyView();
     else loadWeeklyLog(state.weeklyWeekKey);
   }
+  if (state.currentView === "members") renderMembersView();
+}
+
+async function renderMembersView() {
+  viewContent.innerHTML =
+    '<div class="empty" style="padding:40px;text-align:center">加载中...</div>';
+  try {
+    const resp = await fetchJson("/api/sync/users");
+    if (!resp.data || !resp.data.length) {
+      viewContent.innerHTML =
+        '<div class="empty" style="padding:40px;text-align:center">暂无成员数据</div>';
+      return;
+    }
+    const users = resp.data;
+    viewContent.innerHTML = `
+      <div class="members-view">
+        <div class="members-header">
+          <span>共 ${users.length} 人</span>
+        </div>
+        <ul class="members-list">
+          ${users
+            .map(
+              (u) => `
+            <li class="member-card">
+              <div class="member-avatar">${(u.display_name || u.username)[0]}</div>
+              <div class="member-info">
+                <span class="member-name">${escapeHtml(u.display_name || u.username)}</span>
+                <span class="member-username">@${escapeHtml(u.username)}</span>
+                ${u.is_admin ? '<span class="badge status-urgent">管理员</span>' : ""}
+                ${u.is_project_admin ? '<span class="badge status-high">项目管理员</span>' : ""}
+                ${!u.is_active ? '<span class="badge status-cancelled">已停用</span>' : ""}
+              </div>
+              <div class="member-tags">
+                <span>成本系数: ${u.cost_rate ?? 1.0}</span>
+                ${u.user_tags ? `<span>标签: ${escapeHtml(u.user_tags)}</span>` : ""}
+              </div>
+            </li>
+          `
+            )
+            .join("")}
+        </ul>
+      </div>`;
+  } catch (e) {
+    viewContent.innerHTML = `<div class="empty" style="padding:40px;text-align:center;color:var(--danger)">加载失败: ${escapeHtml(e.message)}</div>`;
+  }
 }
 
 async function loadData() {
