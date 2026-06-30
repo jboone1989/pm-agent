@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 
 from sqlmodel import Session, select
 
-from app.models import ActivityLog, OperationAction, OperationLog, WorkItem
+from app.models import ActivityLog, OperationAction, OperationLog, WorkItem, WorkLog
 from app.schemas import WorkItemUpdate
 
 FIELD_LABELS = {
@@ -105,6 +105,17 @@ def record_delete(session: Session, item: WorkItem) -> None:
         f"删除任务：{item.title}",
         work_item_id=item.id,
         work_item_title=item.title,
+    )
+
+
+def record_work_log(session: Session, work_log: WorkLog) -> None:
+    duration_str = f"（{work_log.duration_minutes}分钟）" if work_log.duration_minutes else ""
+    record_operation(
+        session,
+        OperationAction.worklog,
+        f"记录工作日志：{work_log.content[:80]}{duration_str}",
+        work_item_id=work_log.work_item_id,
+        work_item_title="",
     )
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta
 
 from sqlmodel import Session, select
@@ -114,60 +115,214 @@ def _collect_descendants(session: Session, root_id: int) -> list[WorkItem]:
     return result
 
 
+_WORKLOG_ID_RE = re.compile(r"\[Worklog#(\d+)")
+
+
+def _format_worklog_label(log_entry: dict) -> str:
+    wl_log_id = log_entry.get("id")
+    log_date = log_entry.get("log_date", "")
+    username = log_entry.get("display_name") or log_entry.get("username", "")
+    content = log_entry.get("content", "")
+    head = f"[Worklog#{wl_log_id} {log_date}" if wl_log_id else f"[Worklog {log_date}"
+    if username:
+        head += f" {username}"
+    return f"{head}] {content}"
+
+
+def _load_synced_worklog_keys(
+    session: Session, work_item_ids: list[int]
+) -> set[tuple[int, int]]:
+    if not work_item_ids:
+        return set()
+    rows = session.exec(
+        select(ActivityLog.work_item_id, ActivityLog.content).where(
+            ActivityLog.work_item_id.in_(work_item_ids),
+            ActivityLog.source == ActivitySource.worklog,
+        )
+    ).all()
+    keys: set[tuple[int, int]] = set()
+    for work_item_id, text in rows:
+        match = _WORKLOG_ID_RE.search(text)
+        if match:
+            keys.add((work_item_id, int(match.group(1))))
+    return keys
+
+
+def _log_date_range(days: int) -> tuple[date, date]:
+    end_date = date.today() + timedelta(days=1)
+    start_date = end_date - timedelta(days=days + 1)
+    return start_date, end_date
+
+
+def _find_worklog_activity(session: Session, wl_log_id: int) -> ActivityLog | None:
+    if not wl_log_id:
+        return None
+    prefix = f"[Worklog#{wl_log_id} "
+    return session.exec(
+        select(ActivityLog).where(
+            ActivityLog.source == ActivitySource.worklog,
+            ActivityLog.content.startswith(prefix),
+        )
+    ).first()
+
+
+def _match_local_work_item(
+    local_project: WorkItem,
+    children: list[WorkItem],
+    name_map: dict[str, WorkItem],
+    log_entry: dict,
+    remote_name: str,
+) -> WorkItem | None:
+    task_id = log_entry.get("task_id")
+    if task_id is not None:
+        for child in children:
+            if child.remote_id == task_id:
+                return child
+        return None
+
+    wl_task_name = (log_entry.get("task_name") or "").strip()
+    if wl_task_name:
+        if wl_task_name in (remote_name, local_project.title):
+            return None
+        matched = name_map.get(wl_task_name)
+        if matched:
+            return matched
+        for child in children:
+            if child.title in wl_task_name or wl_task_name in child.title:
+                return child
+        return None
+
+    return None
+
+
+def _apply_project_logs(
+    session: Session,
+    logs: list[dict],
+    remote_id: int,
+    remote_name: str,
+    local_project: WorkItem | None,
+) -> tuple[list[dict], int, int]:
+    children: list[WorkItem] = []
+    name_map: dict[str, WorkItem] = {}
+    synced_keys: set[tuple[int, int]] = set()
+    if local_project and local_project.id is not None:
+        children = _collect_descendants(session, local_project.id)
+        name_map = {c.title: c for c in children}
+        work_item_ids = [local_project.id] + [c.id for c in children if c.id is not None]
+        synced_keys = _load_synced_worklog_keys(session, work_item_ids)
+
+    entries: list[dict] = []
+    synced = 0
+    skipped = 0
+
+    for log_entry in logs:
+        if log_entry.get("project_id") not in (None, remote_id):
+            continue
+
+        wl_task_name = (log_entry.get("task_name") or "").strip()
+        content = log_entry.get("content", "")
+        log_date = log_entry.get("log_date", "")
+        wl_log_id = log_entry.get("id")
+        username = log_entry.get("display_name") or log_entry.get("username", "")
+        already_synced = False
+
+        matched: WorkItem | None = None
+        if local_project:
+            matched = _match_local_work_item(
+                local_project, children, name_map, log_entry, remote_name
+            )
+
+            if matched and matched.id is not None:
+                if wl_log_id:
+                    existing = _find_worklog_activity(session, wl_log_id)
+                    if existing:
+                        if existing.work_item_id == matched.id:
+                            already_synced = True
+                            skipped += 1
+                        else:
+                            existing.work_item_id = matched.id
+                            session.add(existing)
+                            synced += 1
+                        entries.append({
+                            "project_name": log_entry.get("project_name") or remote_name,
+                            "task_name": wl_task_name or "-",
+                            "task_id": log_entry.get("task_id"),
+                            "worklog_id": wl_log_id,
+                            "content": content,
+                            "log_date": log_date,
+                            "username": username,
+                            "matched": True,
+                            "already_synced": already_synced,
+                            "remote_project_id": remote_id,
+                        })
+                        continue
+
+                dedupe_key = (matched.id, wl_log_id) if wl_log_id else None
+                if dedupe_key and dedupe_key in synced_keys:
+                    already_synced = True
+                    skipped += 1
+                else:
+                    label = _format_worklog_label(log_entry)
+                    session.add(
+                        ActivityLog(
+                            work_item_id=matched.id,
+                            content=label,
+                            source=ActivitySource.worklog,
+                        )
+                    )
+                    if dedupe_key:
+                        synced_keys.add(dedupe_key)
+
+                    if matched.parent_id is not None:
+                        new_progress = _infer_progress(content, matched.progress or 0)
+                        if new_progress != matched.progress:
+                            matched.progress = new_progress
+                            from app.services.work_items import normalize_progress
+                            normalize_progress(matched)
+                            session.add(matched)
+
+                    synced += 1
+
+        entries.append({
+            "project_name": log_entry.get("project_name") or remote_name,
+            "task_name": wl_task_name or "-",
+            "task_id": log_entry.get("task_id"),
+            "worklog_id": wl_log_id,
+            "content": content,
+            "log_date": log_date,
+            "username": username,
+            "matched": matched is not None,
+            "already_synced": already_synced,
+            "remote_project_id": remote_id,
+        })
+
+    return entries, synced, skipped
+
+
 def pull_logs(session: Session, project_item_id: int, days: int = 7) -> dict:
     project = session.get(WorkItem, project_item_id)
     if not project or not project.remote_id:
         raise WorklogError("该项目未关联 Worklog 项目")
 
-    end_date = date.today() + timedelta(days=1)
-    start_date = end_date - timedelta(days=days + 1)
+    start_date, end_date = _log_date_range(days)
 
     client = WorklogClient()
     logs = client.get_logs(
-        project.remote_id, start_date.isoformat(), end_date.isoformat()
+        project_id=project.remote_id,
+        start_date=start_date.isoformat(),
+        end_date=end_date.isoformat(),
     )
 
-    children = _collect_descendants(session, project_item_id)
-    name_map = {c.title: c for c in children}
-
-    synced = 0
-    for log_entry in logs:
-        task_name = log_entry.get("project_name") or log_entry.get("content", "")
-        content = log_entry.get("content", "")
-        log_date = log_entry.get("log_date", "")
-
-        matched = name_map.get(task_name)
-        if not matched:
-            for child in children:
-                if child.title in task_name or task_name in child.title:
-                    matched = child
-                    break
-        if not matched and (task_name == project.title or task_name in project.title or project.title in task_name):
-            matched = project
-
-        if matched:
-            session.add(
-                ActivityLog(
-                    work_item_id=matched.id,
-                    content=f"[Worklog {log_date}] {content}",
-                    source=ActivitySource.worklog,
-                )
-            )
-
-            if matched.parent_id is not None:
-                new_progress = _infer_progress(content, matched.progress or 0)
-                if new_progress != matched.progress:
-                    matched.progress = new_progress
-                    from app.services.work_items import normalize_progress
-                    normalize_progress(matched)
-                    session.add(matched)
-
-            synced += 1
+    entries, synced, skipped = _apply_project_logs(
+        session, logs, project.remote_id, project.title, project
+    )
 
     session.commit()
     return {
         "synced": synced,
-        "total_logs": len(logs),
+        "skipped_duplicates": skipped,
+        "total_logs": len(entries),
+        "entries": entries,
         "start": start_date.isoformat(),
         "end": end_date.isoformat(),
     }
@@ -246,80 +401,73 @@ def push_single_task(session: Session, item_id: int) -> dict:
 
 
 def pull_all_logs(session: Session, days: int = 7) -> dict:
-    projects = session.exec(
+    client = WorklogClient()
+    try:
+        remote_projects = client.get_projects()
+    except WorklogError as e:
+        raise WorklogError(f"获取 Worklog 项目列表失败: {e}")
+
+    local_projects = session.exec(
         select(WorkItem).where(
             WorkItem.remote_id.is_not(None), WorkItem.parent_id.is_(None)
         )
     ).all()
+    local_by_remote = {p.remote_id: p for p in local_projects if p.remote_id is not None}
 
-    end_date = date.today() + timedelta(days=1)
-    start_date = end_date - timedelta(days=days + 1)
-    client = WorklogClient()
+    start_date, end_date = _log_date_range(days)
 
-    try:
-        logs = client.get_logs(start_date=start_date.isoformat(), end_date=end_date.isoformat())
-    except WorklogError as e:
-        raise WorklogError(f"拉取日志失败: {e}")
-
-    all_tasks: dict[str, WorkItem] = {}
-    for project in projects:
-        for child in _collect_descendants(session, project.id):
-            if child.title not in all_tasks:
-                all_tasks[child.title] = child
-
-    entries = []
+    all_entries: list[dict] = []
     total_synced = 0
+    total_skipped = 0
+    project_results: list[dict] = []
 
-    for log_entry in logs:
-        task_name = log_entry.get("project_name") or ""
-        content = log_entry.get("content", "")
-        log_date = log_entry.get("log_date", "")
-        username = log_entry.get("display_name") or log_entry.get("username", "")
+    for rp in remote_projects:
+        remote_id = rp["id"]
+        remote_name = rp.get("project_name") or f"项目#{remote_id}"
+        local = local_by_remote.get(remote_id)
 
-        matched_item = all_tasks.get(task_name)
-        if not matched_item:
-            for name, child in all_tasks.items():
-                if child.title in task_name or task_name in child.title:
-                    matched_item = child
-                    break
-        if not matched_item:
-            for p in projects:
-                if p.title == task_name or p.title in task_name or task_name in p.title:
-                    matched_item = p
-                    break
-
-        if matched_item:
-            session.add(
-                ActivityLog(
-                    work_item_id=matched_item.id,
-                    content=f"[Worklog {log_date}] {content}",
-                    source=ActivitySource.worklog,
-                )
+        try:
+            logs = client.get_logs(
+                project_id=remote_id,
+                start_date=start_date.isoformat(),
+                end_date=end_date.isoformat(),
             )
-            if matched_item.parent_id is not None:
-                new_progress = _infer_progress(content, matched_item.progress or 0)
-                if new_progress != matched_item.progress:
-                    matched_item.progress = new_progress
-                    from app.services.work_items import normalize_progress
-                    normalize_progress(matched_item)
-                    session.add(matched_item)
-            total_synced += 1
+        except WorklogError as e:
+            project_results.append({
+                "remote_id": remote_id,
+                "project_name": remote_name,
+                "local_id": local.id if local else None,
+                "total_logs": 0,
+                "synced": 0,
+                "error": str(e),
+            })
+            continue
 
-        entries.append({
-            "project_name": log_entry.get("project_name") or "",
-            "task_name": task_name,
-            "content": content,
-            "log_date": log_date,
-            "username": username,
-            "matched": matched_item is not None,
+        entries, synced, skipped = _apply_project_logs(
+            session, logs, remote_id, remote_name, local
+        )
+        all_entries.extend(entries)
+        total_synced += synced
+        total_skipped += skipped
+        project_results.append({
+            "remote_id": remote_id,
+            "project_name": remote_name,
+            "local_id": local.id if local else None,
+            "total_logs": len(entries),
+            "synced": synced,
+            "skipped_duplicates": skipped,
         })
 
     session.commit()
     return {
         "synced": total_synced,
-        "total_logs": len(entries),
-        "projects": len(projects),
-        "entries": entries,
+        "skipped_duplicates": total_skipped,
+        "total_logs": len(all_entries),
+        "projects": len(remote_projects),
+        "entries": all_entries,
+        "project_results": project_results,
+        "start": start_date.isoformat(),
+        "end": end_date.isoformat(),
     }
 
 

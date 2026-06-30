@@ -6,8 +6,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app.config import WORKLOG_SYNC_LOOKBACK_DAYS
 from app.db import init_db
-from app.routers import chat, sync, weekly_log, work_items
+from app.routers import chat, sync, weekly_log, work_items, work_logs
 
 _IS_FROZEN = getattr(sys, "frozen", False)
 
@@ -21,6 +22,7 @@ app.include_router(work_items.router)
 app.include_router(chat.router)
 app.include_router(sync.router)
 app.include_router(weekly_log.router)
+app.include_router(work_logs.router)
 
 app.mount("/static", StaticFiles(directory=_RESOURCES / "static"), name="static")
 templates = Jinja2Templates(directory=_RESOURCES / "templates")
@@ -33,4 +35,8 @@ def on_startup() -> None:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {"worklog_lookback_days": WORKLOG_SYNC_LOOKBACK_DAYS},
+    )

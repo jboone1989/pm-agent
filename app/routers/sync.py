@@ -1,13 +1,22 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
+from app.config import WORKLOG_SYNC_LOOKBACK_DAYS
 from app.db import get_session
 from app.services import sync as sync_service
 from app.services.worklog_client import WorklogClient, WorklogError
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
+
+
+@router.get("/settings")
+def get_sync_settings():
+    return {
+        "ok": True,
+        "worklog_lookback_days": WORKLOG_SYNC_LOOKBACK_DAYS,
+    }
 
 
 @router.post("/pull-projects")
@@ -20,10 +29,14 @@ def pull_projects(session: Session = Depends(get_session)):
 
 
 @router.post("/pull-all-logs")
-def pull_all_logs(days: int = 7, session: Session = Depends(get_session)):
+def pull_all_logs(
+    days: int | None = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    lookback = WORKLOG_SYNC_LOOKBACK_DAYS if days is None else days
     try:
-        result = sync_service.pull_all_logs(session, days)
-        return {"ok": True, **result}
+        result = sync_service.pull_all_logs(session, lookback)
+        return {"ok": True, "days": lookback, **result}
     except WorklogError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -39,11 +52,14 @@ def push_tasks(project_item_id: int, session: Session = Depends(get_session)):
 
 @router.post("/pull-logs/{project_item_id}")
 def pull_logs(
-    project_item_id: int, days: int = 7, session: Session = Depends(get_session)
+    project_item_id: int,
+    days: int | None = Query(default=None),
+    session: Session = Depends(get_session),
 ):
+    lookback = WORKLOG_SYNC_LOOKBACK_DAYS if days is None else days
     try:
-        result = sync_service.pull_logs(session, project_item_id, days)
-        return {"ok": True, **result}
+        result = sync_service.pull_logs(session, project_item_id, lookback)
+        return {"ok": True, "days": lookback, **result}
     except WorklogError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

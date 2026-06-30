@@ -74,14 +74,26 @@ class WorklogClient:
         limit: int = 200,
         offset: int = 0,
     ) -> list[dict]:
-        params: dict = {"limit": limit, "offset": offset}
-        if project_id is not None:
-            params["project_id"] = project_id
-        if start_date:
-            params["start_date"] = start_date
-        if end_date:
-            params["end_date"] = end_date
-        return self._request("GET", "/logs", params=params).get("data", [])
+        """Fetch logs with automatic pagination (project_id returns all members' logs for project admins)."""
+        all_logs: list[dict] = []
+        page_offset = offset
+        while True:
+            params: dict = {"limit": limit, "offset": page_offset}
+            if project_id is not None:
+                params["project_id"] = project_id
+            if start_date:
+                params["start_date"] = start_date
+            if end_date:
+                params["end_date"] = end_date
+            body = self._request("GET", "/logs", params=params)
+            batch = body.get("data", [])
+            all_logs.extend(batch)
+            meta = body.get("meta") or {}
+            total = meta.get("total", len(all_logs))
+            if not batch or len(all_logs) >= total:
+                break
+            page_offset += len(batch)
+        return all_logs
 
     def get_log(self, log_id: int) -> dict:
         return self._request("GET", f"/logs/{log_id}").get("data", {})

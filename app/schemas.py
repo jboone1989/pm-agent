@@ -125,12 +125,31 @@ class OperationLogRead(BaseModel):
     created_at: datetime
 
 
+class WorklogActivityRead(BaseModel):
+    log_date: date
+    username: str = ""
+    content: str
+
+
+class TaskWorklogGroupRead(BaseModel):
+    task_id: int
+    task_title: str
+    logs: list[WorklogActivityRead]
+
+
+class ProjectWorklogGroupRead(BaseModel):
+    project_id: int
+    project_title: str
+    tasks: list[TaskWorklogGroupRead]
+
+
 class WeeklyLogResponse(BaseModel):
     week_key: str
     week_label: str
     start_date: date
     end_date: date
     entries: list[OperationLogRead]
+    project_worklogs: list[ProjectWorklogGroupRead] = []
     report: Optional["WeeklyReportRead"] = None
 
 
@@ -146,6 +165,30 @@ class WeeklyReportGenerateResponse(BaseModel):
     this_week_summary: str
     next_week_plan: str
     generated_at: datetime
+
+
+class WorkLogCreate(BaseModel):
+    content: str
+    duration_minutes: Optional[int] = None
+    log_date: Optional[date] = None
+    work_item_id: Optional[int] = None
+
+
+class WorkLogUpdate(BaseModel):
+    content: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    log_date: Optional[date] = None
+    work_item_id: Optional[int] = None
+
+
+class WorkLogRead(BaseModel):
+    id: int
+    content: str
+    duration_minutes: Optional[int] = None
+    log_date: date
+    work_item_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
 
 
 WorkItemRead.model_rebuild()

@@ -1,9 +1,39 @@
 from sqlalchemy import inspect, text
+from sqlalchemy.engine import make_url
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.config import DATABASE_URL
 from app.services import operation_log as op_log
 
+
+def _ensure_database_exists() -> None:
+    if not DATABASE_URL.startswith("mysql"):
+        return
+    url = make_url(DATABASE_URL)
+    db_name = url.database
+    if not db_name:
+        return
+    import pymysql
+
+    conn = pymysql.connect(
+        host=url.host,
+        port=url.port or 3306,
+        user=url.username,
+        password=url.password or "",
+        charset="utf8mb4",
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"CREATE DATABASE IF NOT EXISTS `{db_name}` "
+                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+_ensure_database_exists()
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, echo=False, connect_args=connect_args)
 

@@ -1573,6 +1573,17 @@ body {
   font-size: 15px;
 }
 
+.weekly-task-group {
+  margin-bottom: 12px;
+}
+
+.weekly-task-group h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 .weekly-log-card {
   width: 280px;
   flex-shrink: 0;
@@ -1690,6 +1701,43 @@ body {
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.report-box-md {
+  white-space: normal;
+}
+
+.report-box-md .weekly-md-h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.report-box-md .weekly-md-h4 {
+  margin: 14px 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.report-box-md .weekly-md-meta {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.report-box-md .weekly-md-date {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.report-box-md .weekly-md-list {
+  margin: 0 0 8px 18px;
+  padding: 0;
+}
+
+.report-box-md .weekly-md-list li {
+  margin-bottom: 4px;
 }
 
 .clickable {
@@ -2005,6 +2053,32 @@ body.is-dragging .drop-zone {
 
 .mb-12 {
   margin-bottom: 12px;
+}
+
+.worklog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.worklog-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.worklog-content {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.worklog-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 12px;
 }
 
 .members-view {

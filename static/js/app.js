@@ -1,3 +1,16 @@
+let WORKLOG_LOOKBACK_DAYS = window.APP_CONFIG?.worklogLookbackDays ?? 30;
+
+async function loadSyncSettings() {
+  try {
+    const settings = await fetchJson("/api/sync/settings");
+    if (settings?.worklog_lookback_days) {
+      WORKLOG_LOOKBACK_DAYS = settings.worklog_lookback_days;
+    }
+  } catch {
+    /* keep template/default fallback */
+  }
+}
+
 const state = {
   currentView: "followup",
   items: [],
@@ -41,6 +54,7 @@ const ACTION_LABELS = {
   delete: "删除",
   chat: "对话",
   agent: "Agent",
+  worklog: "工作日志",
 };
 
 const chatPanel = document.getElementById("chatPanel");
@@ -253,6 +267,70 @@ function escapeHtml(text) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function formatInlineMarkdown(text) {
+  return escapeHtml(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+function renderWeeklyMarkdown(text) {
+  if (!text) return "";
+  const lines = String(text).split("\n");
+  const html = [];
+  let inList = false;
+
+  const closeList = () => {
+    if (inList) {
+      html.push("</ul>");
+      inList = false;
+    }
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      closeList();
+      continue;
+    }
+    if (trimmed.startsWith("## ")) {
+      closeList();
+      html.push(`<h3 class="weekly-md-h3">${escapeHtml(trimmed.slice(3))}</h3>`);
+    } else if (trimmed.startsWith("### ")) {
+      closeList();
+      html.push(`<h4 class="weekly-md-h4">${escapeHtml(trimmed.slice(4))}</h4>`);
+    } else if (trimmed.startsWith("> ")) {
+      closeList();
+      html.push(`<p class="weekly-md-meta">${escapeHtml(trimmed.slice(2))}</p>`);
+    } else if (/^\*\*\d{4}-\d{2}-\d{2}\*\*$/.test(trimmed)) {
+      closeList();
+      html.push(`<div class="weekly-md-date">${escapeHtml(trimmed.slice(2, -2))}</div>`);
+    } else if (trimmed.startsWith("- ")) {
+      if (!inList) {
+        html.push('<ul class="weekly-md-list">');
+        inList = true;
+      }
+      html.push(`<li>${formatInlineMarkdown(trimmed.slice(2))}</li>`);
+    } else {
+      closeList();
+      html.push(`<p>${formatInlineMarkdown(trimmed)}</p>`);
+    }
+  }
+  closeList();
+  return html.join("");
+}
+
+function weeklySummaryPreview(text) {
+  if (!text) return "（未生成）";
+  return text
+    .replace(/^#+\s*/gm, "")
+    .replace(/^\*\*(\d{4}-\d{2}-\d{2})\*\*$/gm, "[$1]")
+    .replace(/^-\s*/gm, "")
+    .replace(/\*\*/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" · ");
 }
 
 function formatDateShort(value) {
@@ -948,7 +1026,10 @@ function bindDailyNotes(dateStr) {
 
 function renderTomorrowView() {
   const tomorrow = new Date(Date.now() + 86400000);
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  const year = tomorrow.getFullYear();
+  const month = String(tomorrow.getMonth() + 1).padStart(2, "0");
+  const day = String(tomorrow.getDate()).padStart(2, "0");
+  const tomorrowStr = `${year}-${month}-${day}`;
   const notes = getDailyNotes(tomorrowStr);
 
   viewContent.innerHTML = `
@@ -1016,6 +1097,25 @@ function getCurrentWeekKey() {
   return `${year}-W${String(weekNum).padStart(2, "0")}`;
 }
 
+function flattenProjectWorklogs(groups) {
+  return (groups || []).flatMap((g) =>
+    (g.tasks || []).flatMap((t) =>
+      (t.logs || []).map((log) => ({
+        ...log,
+        project_title: g.project_title,
+        task_title: t.task_title,
+      }))
+    )
+  );
+}
+
+function countProjectWorklogs(groups) {
+  return (groups || []).reduce(
+    (n, g) => n + (g.tasks || []).reduce((m, t) => m + (t.logs?.length || 0), 0),
+    0
+  );
+}
+
 async function loadWeeklyHistory() {
   const weeks = await fetchJson("/api/weekly-log/history?weeks=8");
   state.weeklyHistory = weeks;
@@ -1034,7 +1134,7 @@ function renderWeeklyView() {
 
   const reportCards = weeks.map((w, i) => {
     const report = w.report;
-    const preview = report?.this_week_summary || "（未生成）";
+    const preview = weeklySummaryPreview(report?.this_week_summary);
     return `
       <div class="weekly-card weekly-report-card" data-week-idx="${i}">
         <div class="weekly-card-header">
@@ -1048,19 +1148,23 @@ function renderWeeklyView() {
   }).join("");
 
   const logCards = weeks.map((w, i) => {
+    const groups = w.project_worklogs || [];
+    const worklogCount = countProjectWorklogs(groups);
+    const taskCount = groups.reduce((n, g) => n + (g.tasks?.length || 0), 0);
+    const previewLogs = flattenProjectWorklogs(groups).slice(0, 3);
     return `
       <div class="weekly-log-card" data-week-idx="${i}">
         <div class="weekly-log-card-header">
           <span class="weekly-card-week">${escapeHtml(w.week_label)}</span>
-          <span class="weekly-card-date">📝 ${w.entries.length} 条操作</span>
+          <span class="weekly-card-date">📝 ${worklogCount} 条工作日志 · ${taskCount} 个任务</span>
         </div>
         <div class="weekly-log-card-body">
-          ${w.entries.slice(0, 3).map((e) => `
+          ${previewLogs.map((log) => `
             <div class="weekly-log-mini">
-              <span class="weekly-log-mini-time">${escapeHtml(formatLogTime(e.created_at))}</span>
-              <span class="weekly-log-mini-msg">${escapeHtml(e.message)}</span>
-            </div>`).join("") || `<div class="weekly-log-mini empty">无记录</div>`}
-          ${w.entries.length > 3 ? `<div class="weekly-log-mini more">... 共 ${w.entries.length} 条</div>` : ""}
+              <span class="weekly-log-mini-time">${escapeHtml(log.log_date)}</span>
+              <span class="weekly-log-mini-msg">${escapeHtml(log.project_title)} · ${escapeHtml(log.task_title)}${log.username ? `（${escapeHtml(log.username)}）` : ""}：${escapeHtml(log.content.slice(0, 60))}</span>
+            </div>`).join("") || `<div class="weekly-log-mini empty">本周暂无 Worklog 同步日志</div>`}
+          ${worklogCount > 3 ? `<div class="weekly-log-mini more">... 共 ${worklogCount} 条</div>` : ""}
         </div>
       </div>`;
   }).join("");
@@ -1077,7 +1181,7 @@ function renderWeeklyView() {
       </div>
     </div>
     <div class="weekly-section">
-      <h3>操作记录</h3>
+      <h3>工作日志</h3>
       <div class="weekly-timeline-wrap" id="logTimeline">
         <div class="weekly-timeline">${logCards}</div>
       </div>
@@ -1134,12 +1238,12 @@ function showReportDetailModal(w) {
         <div style="overflow-y:auto;max-height:55vh">
           <div class="weekly-section">
             <h3>本周工作</h3>
-            <div class="report-box">${escapeHtml(report?.this_week_summary || "（未生成）")}</div>
+            <div class="report-box report-box-md">${renderWeeklyMarkdown(report?.this_week_summary || "（未生成）")}</div>
           </div>
           ${report?.next_week_plan ? `
           <div class="weekly-section">
             <h3>下周计划</h3>
-            <div class="report-box">${escapeHtml(report.next_week_plan)}</div>
+            <div class="report-box report-box-md">${renderWeeklyMarkdown(report.next_week_plan)}</div>
           </div>` : ""}
         </div>
       </div>
@@ -1148,6 +1252,8 @@ function showReportDetailModal(w) {
 }
 
 function showLogDetailModal(w) {
+  const groups = w.project_worklogs || [];
+  const worklogCount = countProjectWorklogs(groups);
   const html = `
     <div class="app-modal" id="logDetailModal">
       <div class="app-modal-card" style="width:min(600px,100%);max-height:80vh">
@@ -1156,14 +1262,22 @@ function showLogDetailModal(w) {
           <button type="button" class="btn secondary sm" id="closeLogDetailModal">关闭</button>
         </div>
         <div style="overflow-y:auto;max-height:55vh">
-          ${w.entries.length
-            ? `<div class="report-box" style="padding:0">${w.entries.map((e) => `
-              <div class="log-entry">
-                <span class="log-time">${escapeHtml(formatLogTime(e.created_at))}</span>
-                <span class="log-action">${escapeHtml(ACTION_LABELS[e.action] || e.action)}</span>
-                <span class="log-message">${escapeHtml(e.message)}</span>
-              </div>`).join("")}</div>`
-            : `<div class="empty">本周没有操作记录</div>`
+          ${worklogCount
+            ? groups.map((g) => `
+              <div class="weekly-section">
+                <h3>${escapeHtml(g.project_title)}</h3>
+                ${(g.tasks || []).map((task) => `
+                  <div class="weekly-task-group">
+                    <h4>${escapeHtml(task.task_title)}</h4>
+                    <div class="report-box" style="padding:0">${(task.logs || []).map((log) => `
+                      <div class="log-entry">
+                        <span class="log-time">${escapeHtml(log.log_date)}</span>
+                        <span class="log-action">${escapeHtml(log.username || "—")}</span>
+                        <span class="log-message">${escapeHtml(log.content)}</span>
+                      </div>`).join("")}</div>
+                  </div>`).join("")}
+              </div>`).join("")
+            : `<div class="empty">本周没有 Worklog 同步日志，请先在项目中拉取日志。</div>`
           }
         </div>
       </div>
@@ -1240,6 +1354,81 @@ function renderCurrentView() {
     else loadWeeklyHistory();
   }
   if (state.currentView === "members") renderMembersView();
+  if (state.currentView === "worklog") renderWorkLogView();
+}
+
+async function renderWorkLogView() {
+  viewContent.innerHTML =
+    '<div class="empty" style="padding:40px;text-align:center">加载中...</div>';
+  try {
+    const dateParam =
+      (document.getElementById("workLogDateFilter") &&
+        document.getElementById("workLogDateFilter").value) ||
+      todayDateString();
+    const logs = await fetchJson(
+      `/api/work-logs?date=${encodeURIComponent(dateParam)}&limit=50`
+    );
+    const stats = await fetchJson(
+      `/api/work-logs/stats?date=${encodeURIComponent(dateParam)}`
+    );
+
+    const totalMinutes = stats?.total_minutes || 0;
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    let timeStr = "";
+    if (hours > 0 && mins > 0) timeStr = `${hours}小时${mins}分钟`;
+    else if (hours > 0) timeStr = `${hours}小时`;
+    else timeStr = `${mins}分钟`;
+
+    viewContent.innerHTML = `
+      <section class="followup-section">
+        <div class="followup-header">
+          <h3 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            工作日志 ·
+            <input type="date"
+                   id="workLogDateFilter"
+                   value="${escapeHtml(dateParam)}"
+                   style="font-size:inherit;padding:2px 6px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:inherit;width:auto" />
+          </h3>
+          <div class="followup-summary">
+            <span class="followup-stat">共 ${logs.length} 条</span>
+            ${totalMinutes > 0 ? `<span class="followup-stat active">合计 ${escapeHtml(timeStr)}</span>` : ""}
+          </div>
+        </div>
+        ${logs.length
+          ? `<div class="worklog-list">
+              ${logs
+                .map(
+                  (log) => `
+                <div class="worklog-item">
+                  <div class="worklog-content">${escapeHtml(log.content)}</div>
+                  <div class="worklog-meta">
+                    ${log.duration_minutes ? `<span class="badge status-in_progress">${log.duration_minutes}分钟</span>` : ""}
+                    ${log.work_item_id ? `<a class="badge" href="#" data-nav-item-id="${log.work_item_id}">关联 #${log.work_item_id}</a>` : ""}
+                  </div>
+                </div>`
+                )
+                .join("")}
+            </div>`
+          : `<div class="empty">当天没有工作日志。通过 Agent 对话汇报工作后自动记录。</div>`
+        }
+      </section>
+    `;
+
+    document
+      .getElementById("workLogDateFilter")
+      .addEventListener("change", () => renderWorkLogView());
+
+    document.querySelectorAll("[data-nav-item-id]").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        const id = Number(el.dataset.navItemId);
+        if (id) void openDetailDrawer(id);
+      });
+    });
+  } catch (e) {
+    viewContent.innerHTML = `<div class="empty" style="padding:40px;text-align:center;color:var(--danger)">加载失败: ${escapeHtml(e.message)}</div>`;
+  }
 }
 
 async function renderMembersView() {
@@ -2107,6 +2296,15 @@ chatForm.addEventListener("submit", async (event) => {
                 }
               } catch (_) {}
             }
+            if (payload.tool === "log_work" && payload.result) {
+              try {
+                const r = typeof payload.result === "string" ? JSON.parse(payload.result) : payload.result;
+                if (r.content) {
+                  const dur = r.duration_minutes ? `（${r.duration_minutes}分钟）` : "";
+                  showAppToast(`已记录工作日志：${r.content.slice(0, 30)}${dur}`, "success");
+                }
+              } catch (_) {}
+            }
           } else if (eventType === "done") {
             if (fullReply) {
               chatHistory.push({ role: "assistant", content: fullReply });
@@ -2170,8 +2368,12 @@ async function pushTasks(projectId) {
 
 async function pullLogs(projectId) {
   try {
-    const result = await fetchJson(`/api/sync/pull-logs/${projectId}?days=7`, { method: "POST" });
-    showAppToast(`拉取日志: ${result.synced}/${result.total_logs} 条 (${result.start} ~ ${result.end})`);
+    await loadSyncSettings();
+    const result = await fetchJson(
+      `/api/sync/pull-logs/${projectId}?days=${WORKLOG_LOOKBACK_DAYS}`,
+      { method: "POST" }
+    );
+    showLogsModal(result);
     await loadData();
   } catch (e) {
     showAppToast(`拉取日志失败: ${e.message}`, "error");
@@ -2185,7 +2387,11 @@ document.getElementById("pullLogsBtn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "同步中...";
   try {
-    const result = await fetchJson("/api/sync/pull-all-logs?days=7", { method: "POST" });
+    await loadSyncSettings();
+    const result = await fetchJson(
+      `/api/sync/pull-all-logs?days=${WORKLOG_LOOKBACK_DAYS}`,
+      { method: "POST" }
+    );
     showLogsModal(result);
     await loadData();
   } catch (e) {
@@ -2202,12 +2408,17 @@ function showLogsModal(result) {
 
   const entries = result.entries || [];
   const matchedCount = entries.filter((e) => e.matched).length;
+  const skippedCount = result.skipped_duplicates ?? entries.filter((e) => e.already_synced).length;
+  const projectCount = result.projects ?? (result.project_results || []).length;
+  const rangeLabel =
+    result.start && result.end ? ` · ${result.start} ~ ${result.end}` : "";
+  const daysLabel = result.days ? ` · 回看 ${result.days} 天` : "";
 
   const html = `
     <div class="app-modal" id="logsModal">
       <div class="app-modal-card" style="width:min(640px,100%);max-height:80vh">
         <div class="app-modal-header">
-          <h4>Worklog 日志 (${matchedCount}/${entries.length} 条已关联)</h4>
+          <h4>Worklog 日志 · ${projectCount} 个项目 · 共 ${entries.length} 条${daysLabel}${rangeLabel} · 新增 ${result.synced ?? 0}${skippedCount ? ` · 跳过重复 ${skippedCount}` : ""}</h4>
           <button type="button" class="btn secondary sm" id="closeLogsModal">关闭</button>
         </div>
         <div style="overflow-y:auto;max-height:60vh">
@@ -2376,6 +2587,6 @@ appendMessage(
   "你好。输入 @ 提及负责人，# 提及任务；点击任务行可编辑详情、进度和子任务。"
 );
 
-loadData().catch((error) => {
+loadSyncSettings().then(() => loadData()).catch((error) => {
   viewContent.innerHTML = `<div class="empty">加载失败：${escapeHtml(error.message)}</div>`;
 });

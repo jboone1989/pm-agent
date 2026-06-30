@@ -9,8 +9,9 @@ from sqlmodel import Session
 
 from app.config import LLM_API_BASE, LLM_API_KEY, LLM_MODEL
 from app.models import ActivitySource, WorkItem, WorkItemStatus, WorkItemType
-from app.schemas import WorkItemCreate, WorkItemUpdate
+from app.schemas import WorkItemCreate, WorkItemUpdate, WorkLogCreate
 from app.services import work_items as work_item_service
+from app.services import work_logs as work_log_service
 
 TASK_REF_RE = re.compile(r"#(\d+)(?:「([^」]+)」)?")
 
@@ -100,7 +101,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "add_daily_note",
-            "description": "添加会议/日程/提醒等临时备忘，不记入任务列表。优先于create_work_item。日期格式YYYY-MM-DD",
+            "description": "添加会议/日程/提醒等临时备忘，不记入任务列表。仅用于记录讨论内容本身，待办事项仍需create_work_item。日期格式YYYY-MM-DD",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -141,6 +142,23 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "log_work",
+            "description": "记录个人已完成的工作活动及用时（已发生的事实），不是新建任务。用于汇报做了什么、花了多长时间。如果同时有任务关联，调用此工具后还应调用add_activity记录进展。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "工作内容描述"},
+                    "duration_minutes": {"type": ["integer", "null"], "description": "花费的分钟数，如不确定可不填"},
+                    "log_date": {"type": ["string", "null"], "description": "日期 YYYY-MM-DD，默认今天"},
+                    "work_item_id": {"type": ["integer", "null"], "description": "关联的任务ID（如有）"},
+                },
+                "required": ["content"],
+            },
+        },
+    },
 ]
 
 
@@ -176,11 +194,87 @@ def _build_system_prompt(session: Session, message: str) -> str:
         if ref_lines:
             ref_hint = "\n## 用户引用的任务\n" + "\n".join(ref_lines)
 
-    return f"""项目管理助手。中文回复，简洁直接。
+    # Include today's existing work logs for context
+    today_logs = work_log_service.list_work_logs(session, log_date=date.today(), limit=10)
+    work_log_context = ""
+    if today_logs:
+        log_lines = []
+        for wl in today_logs:
+            duration_str = f"（{wl.duration_minutes}分钟）" if wl.duration_minutes else ""
+            log_lines.append(f"  - {wl.content}{duration_str}")
+        work_log_context = "\n## 今天已记录的工作日志\n" + "\n".join(log_lines)
+
+    return f"""你是一个项目管理+个人工作日志助手。中文回复，对话式，像一个可靠的工作伙伴。
 
 今天={today}。任务总数{len(items)}。顶层项目：{json.dumps(projects, ensure_ascii=False)}。人员：{assignees}。
 {ref_hint}
-规则：用户汇报新需求/新问题必须create。会议/日程/提醒等临时安排只用add_daily_note，禁止create。分配人员调update。只汇报实际调用了工具的操作。ad_hoc=临时。"""
+{work_log_context}
+
+## 收到消息后，按以下流程思考：
+
+### 步骤1：理解意图
+判断用户消息属于哪种类型（可能是多种混合）：
+A) 汇报工作（"今天做了XX"、"开了个会"、"写完了文档"）
+B) 提出新需求（"需要做XX"、"能不能加XX"）
+C) 会议/日程/提醒（"下午XX开会"、"明天要XX"）
+D) 更新已有任务（"XX做完了"、"XX卡住了"）
+E) 查询信息（"有哪些任务"、"XX进度怎么样"）
+F) 混合类型（"上午写了文档，下午开了评审会，需要修改3个地方"）
+
+### 步骤2：识别信息缺口
+根据类型判断缺失的关键信息：
+
+A类（汇报工作）→ 必须主动问：
+- 用了多长时间？（对应log_work的duration_minutes）
+- 关联到哪个任务？（对应work_item_id）
+- 如果提到了待办事项，要create任务并问：什么时候完成？谁来负责？
+
+B类（新需求）→ 必须主动问：
+- 什么时候完成？（due_date）
+- 谁来负责？（assignee）
+
+C类（会议/日程）→ 问清楚：
+- 如果是日程提醒：用add_daily_note记录
+- 如果提到了会议中的待办事项：每个待办必须create任务，并追问due_date和assignee
+
+D类（更新任务）→ 如果只说"更新了XX"但没有具体内容，必须追问
+
+### 步骤3：决定行动
+- 信息充足 → 直接执行所有需要的工具调用
+- 部分信息缺失 → 先执行已知部分，再追问缺失的信息
+- 关键信息缺失 → 先问清楚再执行，不要替用户假设
+
+### 步骤4：执行或询问
+工具选择指南：
+- log_work → 记录已完成的工作及用时（已发生的事）
+- create_work_item → 创建新任务/待办事项（需要做的事）
+- update_work_item → 更新已有任务状态/进度
+- add_daily_note → 记录会议/日程备忘（临时、不计入任务列表）
+- add_activity → 在任务下添加进展备注或讨论背景
+- split_work_item → 拆分子任务
+- search_work_items → 搜索已有任务
+
+## 关键原则
+- **信息不足时主动追问**：不要替用户做假设。缺少时间、负责人、截止日期等信息时，执行已知操作的同时追问。
+- **混合场景**：用户经常同时汇报工作+提出待办。先log_work记录已完成的工作，再create待办任务，然后追问缺失信息。
+- **关联操作**：log_work时如果关联了任务（work_item_id），同时调add_activity记录进展到该任务。
+- **不要重复记录**：检查"今天已记录的工作日志"，如果内容明显重复就不要再log_work。
+- **只汇报实际调用了工具的操作**。ad_hoc=临时任务。
+- **不要输出大段说明文字**：直接做事+简短追问，字数控制在80字以内。
+
+## 对话示例
+
+用户："我今天用2小时写完了需求文档"
+你：log_work(content="编写需求文档", duration_minutes=120) → 回复："已记录，2小时。关联到哪个任务？"
+
+用户："下午开了项目A评审会，需要输出设计方案"
+你：log_work(content="项目A评审会") + add_daily_note(content="评审会讨论内容...") + create_work_item(title="输出设计方案", parent_id=项目A的ID) → 回复："已记录会议。设计方案的任务已创建，什么时候完成？谁来负责？"
+
+用户："#15 登录功能做完了"
+你：update_work_item(id=15, progress=100) → 回复："已标记完成。用了多长时间？我帮你记工作日志。"
+
+用户："下周一前需要完成测试报告"
+你：create_work_item(title="测试报告", due_date=下周一) → 回复："已创建。谁来负责这个任务？"""
 
 
 def _serialize_item(item) -> dict[str, Any]:
@@ -309,6 +403,17 @@ def execute_tool(
     if name == "add_daily_note":
         return json.dumps({"date": arguments["date"], "content": arguments["content"]}, ensure_ascii=False), changed_ids
 
+    if name == "log_work":
+        payload = WorkLogCreate(**arguments)
+        log = work_log_service.create_work_log(session, payload)
+        return json.dumps({
+            "id": log.id,
+            "content": log.content,
+            "duration_minutes": log.duration_minutes,
+            "log_date": log.log_date.isoformat(),
+            "work_item_id": log.work_item_id,
+        }, ensure_ascii=False), changed_ids
+
     if name == "split_work_item":
         children = [
             WorkItemCreate(**_normalize_create_arguments(session, child, user_message))
@@ -333,6 +438,7 @@ def _tool_label(name: str, args: dict[str, Any]) -> str:
         "add_activity": f"记录进展到 #{args.get('work_item_id', '')}",
         "split_work_item": f"拆分子任务 #{args.get('parent_id', '')}",
         "add_daily_note": f"添加备忘：{args.get('content', '')[:30]}",
+        "log_work": f"记录工作日志：{args.get('content', '')[:30]}",
     }
     return labels.get(name, name)
 
